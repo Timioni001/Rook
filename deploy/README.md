@@ -99,6 +99,10 @@ The dashboard is static files. A small Pages Function (`web/functions/api/[[path
 
 ---
 
+## Optional: Entire on your machine
+
+If you code in this repo with an AI agent on WSL, install Entire using https://hack.entire.io/neathacks-2026, then run `entire enable --agent <your agent>` in the repo. Your commits then link to checkpoints too. Check with `entire status` and `entire checkpoint list`.
+
 ## Run everything locally instead
 
 ```bash
