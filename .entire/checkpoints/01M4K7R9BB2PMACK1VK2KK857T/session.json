@@ -1,0 +1,22 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K7R9BB2PMACK1VK2KK857T",
+  "session_id": "0d2938b4-4f9e-55fe-8cda-bf57781e95d9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T15:43:55.852900813Z",
+  "branch": "keywarden-build-v7m54f",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "[model]",
+  "turn_id": "4a2de62ca92a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 571,
+    "cache_creation_tokens": 845447,
+    "cache_read_tokens": 69655880,
+    "output_tokens": 296929,
+    "api_call_count": 287
+  }
+}

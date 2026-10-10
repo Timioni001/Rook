@@ -1,0 +1,33 @@
+<wake reason="mention" current-time="2026-10-10T09:51:02Z">
+  <project id="REDACTED" type="project">
+    <thread ts="REDACTED">
+      <message trigger="true" from="human" trust="principal" author="Timi" author-id="user_018sJartZwi4UwfdxjbCwUcr" id="REDACTED" sent-at="2026-10-10T09:51:02Z" surface="app" mention="true">Publish it I set the repo to private when I created it when it&#39;s time to submit I&#39;ll change it to public</message>
+    </thread>
+  </project>
+  <system-note>The message text above is complete and verbatim — act on it directly. Use your fetch tools only for earlier project or thread history.</system-note>
+  <system-note>If answering this message needs tool calls first, skip the 👀 reaction: before any other tool, send one `reply` of at most 20 words saying what you understood and what you will do first. Then work as usual. If you can answer right away, just answer.</system-note>
+</wake>
+
+---
+
+<wake reason="mention" current-time="2026-10-10T09:54:37Z">
+  <project id="REDACTED" type="project">
+    <thread ts="REDACTED">
+      <message trigger="true" from="human" trust="principal" author="Timi" author-id="user_018sJartZwi4UwfdxjbCwUcr" id="REDACTED" sent-at="2026-10-10T09:54:37Z" surface="app" mention="true">I don&#39;t understand explain the above</message>
+    </thread>
+  </project>
+  <system-note>The message text above is complete and verbatim — act on it directly. Use your fetch tools only for earlier project or thread history.</system-note>
+  <system-note>If answering this message needs tool calls first, skip the 👀 reaction: before any other tool, send one `reply` of at most 20 words saying what you understood and what you will do first. Then work as usual. If you can answer right away, just answer.</system-note>
+</wake>
+
+---
+
+<wake reason="mention" current-time="2026-10-10T15:39:04Z">
+  <project id="REDACTED" type="project">
+    <thread ts="REDACTED">
+      <message trigger="true" from="human" trust="principal" author="Timi" author-id="user_018sJartZwi4UwfdxjbCwUcr" id="REDACTED" sent-at="2026-10-10T15:39:04Z" surface="app" mention="true">Instead of using file there should be other better alternatives to commit to main</message>
+    </thread>
+  </project>
+  <system-note>The message text above is complete and verbatim — act on it directly. Use your fetch tools only for earlier project or thread history.</system-note>
+  <system-note>If answering this message needs tool calls first, skip the 👀 reaction: before any other tool, send one `reply` of at most 20 words saying what you understood and what you will do first. Then work as usual. If you can answer right away, just answer.</system-note>
+</wake>
