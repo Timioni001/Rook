@@ -63,15 +63,21 @@ Good to know:
 - Demo data resets whenever the service restarts. Everything in Rook is synthetic, so nothing is lost.
 - Render's free plan allows about 750 instance-hours a month, which is one service kept warm continuously.
 
-## Deploy the dashboard from your machine instead
+## Deploy the dashboard from your machine instead (nothing to configure)
 
-If the Cloudflare Git build misbehaves, skip it. This uploads the built site directly, with no dashboard build settings involved:
+The Git build depends on three fields being right in the Cloudflare dashboard. This path depends on none of them:
 
 ```bash
 ROOK_API_ORIGIN=https://<your-service>.onrender.com ./scripts/deploy-pages.sh
 ```
 
-It builds the dashboard, stores `ROOK_API_ORIGIN` on the Pages project, and uploads `web/out` together with the `/api` proxy function. The first run signs you in to Cloudflare in a browser; `CLOUDFLARE_API_TOKEN` (with "Cloudflare Pages: Edit") skips that. Set `CF_PAGES_PROJECT` if the project is not called `rook`.
+It builds the dashboard, creates the Pages project if it does not exist, compiles the agent's address into a staged copy of the `/api` proxy, and uploads the result. No build settings and no environment variables are involved, and nothing in git changes -- the committed proxy keeps its empty default. The first run prints a Cloudflare sign-in link; `CLOUDFLARE_API_TOKEN` (with "Cloudflare Pages: Edit") skips it. Set `CF_PAGES_PROJECT` if the project is not called `rook`.
+
+Then check it:
+
+```bash
+python3 scripts/check-live.py https://<project>.pages.dev
+```
 
 ## When a Cloudflare Pages build fails
 

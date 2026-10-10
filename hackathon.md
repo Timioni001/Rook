@@ -44,6 +44,12 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 - A Cloudflare Worker on a 5-minute cron (`deploy/keepwarm`) keeps the Render instance from sleeping, so the public link answers at once whenever judging happens. The dashboard also waits out a cold start instead of showing an error.
 - `scripts/deploy-pages.sh` uploads the dashboard straight from WSL if the Git build misbehaves. `scripts/check-live.py` runs a real incident against the live address and prints PASS, including the approval step.
 
+**21:26: second Pages build failed the same way.** The project's build command was still `STATIC_EXPORT=1 npx next build` at the repository root, which cannot work from there whatever the repository contains. Render, meanwhile, came up: `scripts/check-live.py https://rook-qswm.onrender.com` closes an offboarding incident verified, approval step included.
+
+**22:00: the dashboard deploy no longer depends on the Cloudflare build settings.**
+- `scripts/deploy-pages.sh` creates the Pages project, compiles the agent's address into a staged copy of the `/api` proxy and uploads it. No build command, no root directory, no environment variables. The committed proxy keeps its empty default, so nothing in git changes.
+- Fixed a proxy bug this surfaced: the agent's responses are compressed, and forwarding the client's `accept-encoding` left the body and the `content-encoding` header disagreeing, so the page arrived as noise. The proxy now negotiates compression itself and drops the framing headers the runtime has already consumed. Verified in a browser: the staged bundle, served by the real Workers runtime against the live Render agent, runs an outage incident to Verified Closure with no console errors.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

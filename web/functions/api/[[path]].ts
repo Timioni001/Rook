@@ -42,6 +42,10 @@ export async function onRequest(context: any): Promise<Response> {
 
   const headers = new Headers(request.headers)
   headers.delete('host')
+  // Let the runtime negotiate compression with the agent. If the client's own
+  // accept-encoding is forwarded, the body and the content-encoding header can
+  // disagree by the time they reach the browser, and the page arrives as noise.
+  headers.delete('accept-encoding')
   const method = request.method
   const safe = method === 'GET' || method === 'HEAD'
   const body = safe ? undefined : await request.arrayBuffer()
@@ -51,7 +55,7 @@ export async function onRequest(context: any): Promise<Response> {
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     try {
       const resp = await fetch(target, { method, headers, body, redirect: 'manual' })
-      if (!retryable.has(resp.status) || attempt === ATTEMPTS) return resp
+      if (!retryable.has(resp.status) || attempt === ATTEMPTS) return passthrough(resp)
       last = `the agent answered ${resp.status}`
     } catch (e: any) {
       // A dropped connection on a write may still have been processed, so never replay it.
@@ -62,6 +66,16 @@ export async function onRequest(context: any): Promise<Response> {
     await sleep(BACKOFF_MS * attempt)
   }
   return json(504, { detail: `Could not reach the Rook agent (${last}). It may still be starting up.` })
+}
+
+// The runtime hands back a decoded body, so the agent's framing headers no longer
+// describe it. Drop them and let the edge re-encode for the client.
+const DROP = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+
+function passthrough(resp: Response): Response {
+  const headers = new Headers(resp.headers)
+  for (const h of DROP) headers.delete(h)
+  return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers })
 }
 
 function json(status: number, data: unknown): Response {

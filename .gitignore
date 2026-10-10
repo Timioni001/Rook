@@ -10,6 +10,8 @@ web/.next/
 web/next-env.d.ts
 web/out/
 web/.wrangler/
+.wrangler/
 *.tsbuildinfo
 /out/
 /functions/
+/.pages-deploy/
