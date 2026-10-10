@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KK5YMF2PV0548CAX4KPDYT",
+  "strategy": "manual-commit",
+  "branch": "keywarden-build-v7m54f",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "web/app/page.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 652,
+    "cache_creation_tokens": 1238254,
+    "cache_read_tokens": 82974934,
+    "output_tokens": 324106,
+    "api_call_count": 328
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KK5YMF2PV0548CAX4KPDYT",
+  "session_id": "0d2938b4-4f9e-55fe-8cda-bf57781e95d9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T19:03:37.81973953Z",
+  "branch": "keywarden-build-v7m54f",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "web/app/page.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "[model]",
+  "turn_id": "293239a82756",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 652,
+    "cache_creation_tokens": 1238254,
+    "cache_read_tokens": 82974934,
+    "output_tokens": 324106,
+    "api_call_count": 328
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T19:03:37.179345037Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 109,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 109,
+    "total_lines_changed": 114,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
