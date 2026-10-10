@@ -58,6 +58,8 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 - The **evidence pack** maps every closure check to an indicative SOC 2 and ISO 27001 control, labelled as a starting point for an auditor rather than a claim that an audit would pass.
 - 95 tests. Verified in a browser through the Cloudflare proxy: the refusal path escalates and renders, and the already-revoked path closes verified after a single action.
 
+**23:10: the Pages address was never ours.** `check-live.py https://rook.pages.dev` reported `403 error code: 1010`, which reads like a failed deploy. It was two separate problems. Cloudflare's browser-integrity check rejects urllib's default user agent, and `rook.pages.dev` is a create-react-app site belonging to another Cloudflare account: pages.dev subdomains are global, not per account. The checker now identifies itself, verifies the page was built from this repository, and names both failures instead of reporting a dead deployment. `deploy-pages.sh` defaults to `rook-keywarden` and refuses to deploy into a name another account owns.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

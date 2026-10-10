@@ -17,7 +17,8 @@ root=$(pwd)
 # shellcheck disable=SC1091
 [[ -f .env ]] && set -a && . ./.env && set +a
 
-PROJECT="${CF_PAGES_PROJECT:-rook}"
+# pages.dev names are global, not per account: plain "rook" already belongs to someone else.
+PROJECT="${CF_PAGES_PROJECT:-rook-keywarden}"
 WRANGLER="${WRANGLER:-wrangler@4}"
 BRANCH="${CF_PAGES_BRANCH:-main}"
 STAGE="$root/.pages-deploy"
@@ -65,16 +66,45 @@ print(f"    /api will forward to {origin}")
 PY
 
 echo "==> making sure the Pages project exists"
-npx --yes "$WRANGLER" pages project create "$PROJECT" --production-branch "$BRANCH" >/dev/null 2>&1 \
-  && echo "    created project '$PROJECT'" \
-  || echo "    project '$PROJECT' already exists (or needs creating by hand)"
+create=$(npx --yes "$WRANGLER" pages project create "$PROJECT" --production-branch "$BRANCH" 2>&1) && created=1 || created=0
+if [[ $created == 1 ]]; then
+  echo "    created project '$PROJECT'"
+elif grep -qiE "another account|unavailable|already (taken|in use)" <<<"$create"; then
+  # "already exists in another account" means the name is someone else's, not ours.
+  echo "    the name '$PROJECT' belongs to another Cloudflare account." >&2
+  sed 's/^/      /' <<<"$create" >&2
+  cat >&2 <<MSG
+
+pages.dev subdomains are shared across every Cloudflare account, so pick another name:
+
+  CF_PAGES_PROJECT=rook-<something-of-yours> ROOK_API_ORIGIN=$ROOK_API_ORIGIN ./scripts/deploy-pages.sh
+MSG
+  exit 1
+elif grep -qiE "already (exists|have)|duplicate" <<<"$create"; then
+  echo "    project '$PROJECT' already exists in this account"
+else
+  # The usual cause is a name someone else owns: <name>.pages.dev is global, not per account.
+  echo "    could not create project '$PROJECT':" >&2
+  sed 's/^/      /' <<<"$create" >&2
+  cat >&2 <<MSG
+
+If the name is unavailable, pick another and deploy again. pages.dev subdomains are
+shared across every Cloudflare account, so a common word is usually taken:
+
+  CF_PAGES_PROJECT=rook-$RANDOM ROOK_API_ORIGIN=$ROOK_API_ORIGIN ./scripts/deploy-pages.sh
+MSG
+  exit 1
+fi
 
 echo "==> uploading"
 # Run from the staging directory so functions/ sits beside out/ and ships too.
 cd "$STAGE"
-npx --yes "$WRANGLER" pages deploy out --project-name "$PROJECT" --branch "$BRANCH" --commit-dirty=true
+npx --yes "$WRANGLER" pages deploy out --project-name "$PROJECT" --branch "$BRANCH" --commit-dirty=true | tee "$STAGE/deploy.log"
 
 cd "$root"
+url=$(grep -oE 'https://[a-z0-9.-]+\.pages\.dev' "$STAGE/deploy.log" | tail -1)
+url="${url:-https://$PROJECT.pages.dev}"
 echo
+echo "Live at: $url"
 echo "Now check it end to end:"
-echo "  python3 scripts/check-live.py https://$PROJECT.pages.dev"
+echo "  python3 scripts/check-live.py $url"

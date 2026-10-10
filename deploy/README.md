@@ -71,13 +71,19 @@ The Git build depends on three fields being right in the Cloudflare dashboard. T
 ROOK_API_ORIGIN=https://<your-service>.onrender.com ./scripts/deploy-pages.sh
 ```
 
-It builds the dashboard, creates the Pages project if it does not exist, compiles the agent's address into a staged copy of the `/api` proxy, and uploads the result. No build settings and no environment variables are involved, and nothing in git changes -- the committed proxy keeps its empty default. The first run prints a Cloudflare sign-in link; `CLOUDFLARE_API_TOKEN` (with "Cloudflare Pages: Edit") skips it. Set `CF_PAGES_PROJECT` if the project is not called `rook`.
+It builds the dashboard, creates the Pages project if it does not exist, compiles the agent's address into a staged copy of the `/api` proxy, and uploads the result. **Pick a project name nobody else has taken:** `<name>.pages.dev` is shared across every Cloudflare account, so plain `rook` is already somebody's site. The default is `rook-keywarden`; override it with `CF_PAGES_PROJECT`. No build settings and no environment variables are involved, and nothing in git changes -- the committed proxy keeps its empty default. The first run prints a Cloudflare sign-in link; `CLOUDFLARE_API_TOKEN` (with "Cloudflare Pages: Edit") skips it. Set `CF_PAGES_PROJECT` if the project is not called `rook`.
 
 Then check it:
 
 ```bash
 python3 scripts/check-live.py https://<project>.pages.dev
 ```
+
+## Two confusing failures, and what they actually mean
+
+**`403 error code: 1010` from `check-live.py`.** Cloudflare's browser-integrity check rejecting a non-browser client, not a dead deployment. The checker now sends a proper user agent, so this should not recur; if it does, the site is up and something in front of it is filtering requests.
+
+**The address answers, but nothing is Rook.** `<name>.pages.dev` is global, not per account. If the name was taken, you are looking at a stranger's project. `check-live.py` now detects this and says so, and `deploy-pages.sh` refuses to continue instead of deploying into a name it does not own.
 
 ## When a Cloudflare Pages build fails
 

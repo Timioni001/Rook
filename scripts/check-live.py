@@ -17,10 +17,16 @@ ANALYST = "demo-analyst-token"
 APPROVER = "demo-approver-token"
 
 
+# Cloudflare's browser-integrity check rejects the default urllib agent with HTTP 403 and
+# "error code: 1010", which looks exactly like a dead deployment. Identify the tool instead.
+AGENT = "Mozilla/5.0 (compatible; rook-check-live/1.0; +https://github.com/Timioni001/Rook)"
+
+
 def call(base, path, token=None, body=None, timeout=120):
     url = base.rstrip("/") + path
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET")
+    req.add_header("User-Agent", AGENT)
     if token:
         req.add_header("Authorization", "Bearer " + token)
     if data is not None:
@@ -52,12 +58,26 @@ def fail(detail):
 
 
 def wake(base, budget):
-    """A sleeping free instance refuses or 5xxs until it has started. Wait it out."""
+    """A sleeping free instance refuses or 5xxs until it has started. Wait it out.
+
+    Two failures are worth naming, because both look like "the deployment is broken":
+    a bot-protection block, and an address that serves some other site entirely.
+    """
     started = time.time()
+    status, body = None, None
     while time.time() - started < budget:
         status, body = call(base, "/api/health", timeout=90)
         if status == 200 and isinstance(body, dict) and body.get("ok"):
             return round(time.time() - started, 1), None
+        if status == 403 and b"1010" in (body if isinstance(body, bytes) else b""):
+            return None, ("Cloudflare rejected this client (error 1010). The site is up; something in "
+                          "front of it is blocking non-browser requests.")
+        if status == 200:
+            page, _ = call(base, "/", timeout=60)
+            if page == 200:
+                return None, ("this address answers, but /api/health is not Rook's. It is almost certainly "
+                              "a different site. pages.dev names are global, so a name someone else "
+                              "already owns serves their project, not yours.")
         time.sleep(3)
     return None, f"no healthy answer within {budget}s (last: {status} {body})"
 
@@ -83,6 +103,11 @@ def main():
     status, body = call(base, "/")
     if status != 200:
         fail(f"GET / returned {status}")
+        return 1
+    html = body if isinstance(body, bytes) else str(body).encode()
+    if b"/_next/" not in html:
+        fail("the page served here was not built from this repository (no Next.js assets). "
+             "Check the address, and that the deployment uploaded web/out.")
         return 1
     ok()
 
