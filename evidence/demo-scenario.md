@@ -20,13 +20,25 @@ The other outcomes, from real runs in [runs/](runs/):
 | `regression_fail` | escalated, 12/13 | billing-app is healthy but its regression suite fails |
 | `faulty_update` | escalated, 9/13 | billing-app stored a wrong key and was down for 1 step. Rook rolled it back to the old, still-valid key and held the revocation |
 
+## Service outage playbook
+
+Real terminal runs (`python -m rook.demo --scenario <name>`, full JSON in [runs/](runs/)):
+
+| Scenario | Result | Why |
+|---|---|---|
+| `outage` | closed, 7/7 checks | 3 tool calls, 1 failed. The rollback call timed out, but Rook read the running revision, saw the rollback had landed and didn't send it again. Auto-deploy is back on with revision 42 blocked |
+| `outage_wrong_cause` | escalated, 1/7 | The rollback landed but the service stayed down, so Rook escalated: the deploy isn't the whole cause. The pipeline stays paused on purpose, and both points are listed as follow-ups |
+| `outage_rollback_down` | escalated, 0/7 | The rollback API failed 4 times. Rook stopped there and left revision 42 visible as still running instead of claiming a fix |
+
+In these runs `dependent_outage_steps` counts the workflow steps where checkout-api or storefront were down. For an outage that's the time until the rollback lands, not harm Rook caused.
+
 ## Video script (under 3 minutes)
 
-1. **0:00–0:15 Problem.** "A contractor left yesterday. Their account is disabled, but the payments API key they created still works. It's in a repo, and two services depend on it." Show the sandbox banner.
-2. **0:15–0:45 Investigate.** Start the `signature` incident. Point at the graph (person → accounts, key → billing-app and payments-worker → repo) and the findings. Call out that "payments-worker isn't in vault metadata; Rook found it by scanning config."
-3. **0:45–1:05 Plan and policy.** Walk the plan in safe order: replace, move both services, then revoke. Note the 13 closure checks defined before any change.
-4. **1:05–1:40 Failure and recovery.** Click **Run plan**. The timeline shows the 503. In the failure card, show the checkpoint, the state inspection ("did not take effect, so a retry is safe"), attempt 2 succeeding and the independent verification.
-5. **1:40–2:05 Approval.** Rook pauses at revocation. As Sam (analyst) the approve button isn't there. Switch to Priya (approver) and approve. The step runs and the old key is rejected.
-6. **2:05–2:25 Verified Closure.** Show 13/13 checks with evidence, then download the evidence pack, which shows the hash chain intact. Switch to Eve (other org) and the incident isn't visible.
-7. **2:25–2:50 Partners.** Show the neatlogs trace tree (before/after outage numbers), the Entire checkpoint for the build and the cfo.ai plan.
-8. **2:50–3:00 Rollback.** Optionally run the `faulty_update` scenario: the service is broken by a bad update, rolled back automatically and escalated.
+1. **0:00–0:15 Problem.** "Growing companies handle IT incidents by hand: someone investigates, someone fixes, and the ticket gets closed when the tool says success. Rook does the work and proves it." Show the two incident types and the sandbox banner.
+2. **0:15–0:40 Investigate (offboarding).** Start the `signature` incident. Point at the graph (person → accounts, key → billing-app and payments-worker → repo) and the findings. Call out that "payments-worker isn't in vault metadata; Rook found it by scanning config."
+3. **0:40–0:55 Plan and policy.** Walk the plan in safe order: replace, move both services, then revoke. Note the 13 closure checks defined before any change.
+4. **0:55–1:25 Failure and recovery.** Click **Run plan**. The timeline shows the 503. In the failure card, show the checkpoint, the state inspection ("did not take effect, so a retry is safe"), attempt 2 succeeding and the independent verification.
+5. **1:25–1:45 Approval.** Rook pauses at revocation. As Sam the approve button isn't there. Switch to Priya (approver) and approve. The step runs and the old key is rejected. Show 13/13 checks and the evidence pack.
+6. **1:45–2:25 Service outage.** Switch to **Service outage**, scenario `outage`. Findings: revision 42 went out one minute before the alert and points at a decommissioned database, and auto-deploy would undo a rollback. Run it: pause, rollback (it times out, and Rook confirms it landed instead of resending), resume with revision 42 blocked. 7/7 checks, including "a test order goes through".
+7. **2:25–2:40 Honest failure.** Run `outage_wrong_cause`: the rollback doesn't help, so Rook escalates, keeps the pipeline paused and says why.
+8. **2:40–3:00 Partners.** Show the neatlogs trace tree (sessions per incident, guardrail spans, before/after), the Entire checkpoints for the build and the cfo.ai plan.

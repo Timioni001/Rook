@@ -4,7 +4,7 @@ Generated from real runs in the build environment on 2026-10-10 (UTC). Re-run wi
 
 ## Backend: `python -m pytest -v`
 
-Result: **58 passed** at the time of the raw output below. The current branch has **69**: 2 neatlogs feature tests, an evidence-pack API test, and 6 tests for rollback, repo cleanup, ownerless accounts, a tampered audit log and incident metrics (Python 3.13, pytest). The one warning comes from Starlette's test client.
+Result: **58 passed** at the time of the raw output below. The current branch has **80**: 2 neatlogs feature tests, an evidence-pack API test, 6 tests for rollback, repo cleanup, ownerless accounts, a tampered audit log and incident metrics, and 11 service-outage tests in `tests/test_outage.py`. They pass on Python 3.13 and on 3.14, the Ubuntu 26.04 default. The one warning comes from Starlette's test client.
 
 ### Required scenarios → tests
 

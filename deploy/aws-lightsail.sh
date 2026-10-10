@@ -11,7 +11,14 @@ REGION="${AWS_REGION:-us-east-1}"
 POWER="${POWER:-nano}"          # smallest tier; plenty for a single-process demo
 cd "$(dirname "$0")/.."
 
-docker build -t rook:latest .
+for tool in docker aws lightsailctl python3; do
+  command -v "$tool" >/dev/null || { echo "missing: $tool (run ./scripts/setup-wsl.sh)"; exit 1; }
+done
+docker info >/dev/null 2>&1 || { echo "Docker is installed but not reachable. On WSL: start Docker Desktop and turn on"
+                                  echo "WSL integration for this distro (Settings > Resources > WSL integration)."; exit 1; }
+aws sts get-caller-identity >/dev/null || { echo "AWS CLI has no working credentials: run 'aws configure'."; exit 1; }
+
+docker build --platform linux/amd64 -t rook:latest .     # Lightsail runs x86_64
 
 if ! aws lightsail get-container-services --service-name "$SERVICE" --region "$REGION" >/dev/null 2>&1; then
   aws lightsail create-container-service --service-name "$SERVICE" --power "$POWER" --scale 1 --region "$REGION" >/dev/null
