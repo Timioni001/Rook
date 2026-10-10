@@ -1,6 +1,7 @@
 """Run one sandboxed incident end to end and print what happened.
 
     python -m rook.demo                       # signature scenario (transient failure + recovery)
+    python -m rook.demo --scenario persistent # Rook escalates instead of claiming success
     NEATLOGS_API_KEY=... python -m rook.demo  # same, with traces exported to neatlogs
 
 The demo also probes every dependent application's health after each workflow step, so a trace
@@ -8,33 +9,32 @@ shows whether remediation caused an outage for the services that rely on the cre
 """
 import argparse, json, os, tempfile, time
 from . import obs
+from .domain import Principal
 from .engine import Engine
-from .sandbox import Sandbox
+from .sandbox import SCENARIOS, Sandbox
 from .store import Store
 
-SCENARIOS = {
-    "transient": ({"app.repair": ["transient"]}, {}),
-    "clean": ({}, {}),
-    "ambiguous": ({"vault.rotate": ["timeout_applied"]}, {}),
-    "persistent": ({"app.repair": ["transient"] * 10}, {}),
-}
+# The demo plays the human approver from the command line. In the app, approval comes from an
+# authenticated user with the approver role.
+DEMO_APPROVER = Principal(id="demo-approver", org="acme", roles=["approver"], name="Demo approver")
 
 
 def dependents(sb):
-    return sorted({app for c in sb.vault.creds().values() for app in c["used_by"]})
+    """Services that relied on the leaked key when the incident began."""
+    return ["app:billing-app", "cloud:payments-worker"]
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scenario", default="transient", choices=sorted(SCENARIOS))
+    ap.add_argument("--scenario", default="signature", choices=sorted(SCENARIOS))
+    ap.add_argument("--no-approve", action="store_true", help="stop when approval is required")
     ap.add_argument("--label", default=os.getenv("ROOK_DEMO_LABEL", "dev"))
     args = ap.parse_args(argv)
 
     exporting = obs.init_neatlogs(workflow_name="rook-incident-response")
     db = os.path.join(tempfile.mkdtemp(), "demo.db")
     st = Store(db)
-    failures, flags = SCENARIOS[args.scenario]
-    sb = Sandbox(st, failures=failures, flags=flags)
+    sb = Sandbox(st, scenario=args.scenario)
     probes = {"steps": 0, "outage_steps": 0, "unhealthy": {}}
 
     real_checkpoint = st.checkpoint
@@ -45,7 +45,7 @@ def main(argv=None):
             return
         probes["steps"] += 1
         with obs.span("probe.dependent_health", incident=iid, step=probes["steps"]) as s:
-            bad = [a for a in dependents(sb) if not sb.apps.health(a)]
+            bad = [a for a in dependents(sb) if not sb.health(a)]
             s.set(unhealthy_dependents=len(bad), healthy=not bad)
         if bad:
             probes["outage_steps"] += 1
@@ -56,14 +56,21 @@ def main(argv=None):
     t0 = time.time()
     with obs.span("demo.incident", scenario=args.scenario, label=args.label) as root:
         eng = Engine(st, sb, sleep=lambda s: None)
-        inc = eng.start("ident-jdoe")
+        inc = eng.start(scenario=args.scenario)
         rep = eng.run(inc.id)
+        if rep["status"] == "awaiting_approval" and not args.no_approve:
+            for a in [x for x in st.actions(inc.id) if x.status.value == "needs_approval"]:
+                eng.approve(inc.id, a.id, DEMO_APPROVER)
+            rep = eng.run(inc.id)
         root.set(incident=inc.id, status=rep["status"], tool_calls=rep["metrics"]["tool_calls"],
                  dependent_outage_steps=probes["outage_steps"])
     summary = {
         "label": args.label, "scenario": args.scenario, "incident": inc.id, "status": rep["status"],
         "duration_ms": round((time.time() - t0) * 1000, 1),
-        "tool_calls": rep["metrics"]["tool_calls"], "audit_events": rep["metrics"]["audit_events"],
+        "summary": rep["summary"],
+        "tool_calls": rep["metrics"]["tool_calls"], "failed_tool_calls": rep["metrics"]["failed_tool_calls"],
+        "checkpoints": rep["metrics"]["checkpoints"], "audit_events": rep["metrics"]["audit_events"],
+        "conditions_passed": f"{sum(c['result'] is True for c in rep['conditions'])}/{len(rep['conditions'])}",
         "workflow_steps": probes["steps"], "dependent_outage_steps": probes["outage_steps"],
         "unhealthy_dependents": probes["unhealthy"],
         "retries": {a["id"]: a["retries"] for a in rep["actions"] if a["retries"]},
