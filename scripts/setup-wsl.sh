@@ -19,7 +19,7 @@ fi
 
 say "System packages"
 sudo apt-get update -y
-sudo apt-get install -y python3 python3-venv git curl ca-certificates
+sudo apt-get install -y git curl ca-certificates
 
 node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
 if (( node_major < 18 )) || ! have npm; then
@@ -28,10 +28,14 @@ if (( node_major < 18 )) || ! have npm; then
   sudo apt-get install -y nodejs
 fi
 
-say "Python environment (.venv)"
-python3 -m venv .venv
-.venv/bin/pip install --upgrade pip -q
-.venv/bin/pip install -r requirements.txt -q
+say "Python environment (.venv, Python 3.13)"
+# neatlogs supports Python 3.10-3.13, and Ubuntu 26.04 ships 3.14, so uv provides a 3.13 for this project.
+if ! have uv && [[ ! -x "$HOME/.local/bin/uv" ]]; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
+UV=$(command -v uv || echo "$HOME/.local/bin/uv")
+"$UV" venv --python 3.13 .venv
+VIRTUAL_ENV="$PWD/.venv" "$UV" pip install -r requirements.txt
 .venv/bin/python -m pytest -q
 
 say "Dashboard dependencies"

@@ -12,7 +12,7 @@ No cloud server or credit card is needed. Do the steps in order. Each one ends w
 
 ## 0. One-time setup on Ubuntu (WSL)
 
-Everything below runs in an **Ubuntu terminal on WSL**. It was written for Ubuntu 26.04 and also works on 24.04. Python 3.14, the Ubuntu 26.04 default, passes the full test suite.
+Everything below runs in an **Ubuntu terminal on WSL**. It was written for Ubuntu 26.04 and also works on 24.04. Ubuntu 26.04 ships Python 3.14, which neatlogs doesn't support yet, so the setup script uses `uv` to give the project its own Python 3.13.
 
 1. **Clone inside WSL, not under `/mnt/c`.** Builds are much faster there, and the scripts keep their Linux line endings:
    ```bash
@@ -20,7 +20,7 @@ Everything below runs in an **Ubuntu terminal on WSL**. It was written for Ubunt
    git clone https://github.com/Timioni001/Rook && cd Rook && git checkout keywarden-build-v7m54f
    ```
    If you already cloned it, run `git pull` to get the fixed setup script.
-2. **Run the setup script.** It installs the system packages, the Python venv, the dashboard packages and `cloudflared`, then runs the tests. It only installs Node if yours is missing or older than 18. It's safe to run again.
+2. **Run the setup script.** It installs the system packages, a Python 3.13 venv (through `uv`), the dashboard packages and `cloudflared`, then runs the tests. It only installs Node if yours is missing or older than 18. It's safe to run again.
    ```bash
    ./scripts/setup-wsl.sh            # asks for your sudo password once
    source .venv/bin/activate
