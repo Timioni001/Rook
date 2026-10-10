@@ -28,5 +28,7 @@ ls .entire/checkpoints/          # the same checkpoints as committed files, no E
 | [01M4KHB6C93GCV4RPS7YFQ6351](../.entire/checkpoints/01M4KHB6C93GCV4RPS7YFQ6351/) | `66ba4a6` | Fixed the WSL setup, replaced AWS with Cloudflare Tunnel |
 | [01M4KHPDHXNSAXNEF8HDC7WT8K](../.entire/checkpoints/01M4KHPDHXNSAXNEF8HDC7WT8K/) | `908dcc6` | Gave the project its own Python 3.13 via uv for neatlogs |
 | [01M4KK5YMF2PV0548CAX4KPDYT](../.entire/checkpoints/01M4KK5YMF2PV0548CAX4KPDYT/) | `7c94aa1` | Guided dashboard, one-command public link, cfo.ai inputs |
+| [01M4KK752JA1SB7VVM3CYA4YZ3](../.entire/checkpoints/01M4KK752JA1SB7VVM3CYA4YZ3/) | `893d52e` | Exported checkpoints with a stricter email redaction |
+| [01M4KMAH7MFTFAEYJ673B42XYQ](../.entire/checkpoints/01M4KMAH7MFTFAEYJ673B42XYQ/) | `2db6886` | No-terminal deploy (Render + Cloudflare Pages), handoff notes |
 
 Run `ls .entire/checkpoints` for the current list. Each folder name matches an `Entire-Checkpoint:` trailer in `git log`.
