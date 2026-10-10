@@ -121,10 +121,13 @@ def test_validation_and_limits(client):
 
 def test_rate_limit(tmp_path):
     app = create_app(db_path=str(tmp_path / "r.db"), tokens=DEMO_TOKENS, step_delay=0, background=False,
-                     rate_limit=3)
+                     rate_limit=2, read_rate_limit=3)
     with TestClient(app) as c:
-        codes = [c.get("/api/me", headers=h(VIEWER)).status_code for _ in range(4)]
-    assert codes == [200, 200, 200, 429]
+        reads = [c.get("/api/me", headers=h(VIEWER)).status_code for _ in range(4)]
+        writes = [c.post("/api/incidents", json={"scenario": "clean"}, headers=h(ANALYST)).status_code
+                  for _ in range(3)]
+    assert reads == [200, 200, 200, 429]
+    assert writes == [201, 201, 429]
 
 
 def test_errors_do_not_leak_internals(client, monkeypatch):

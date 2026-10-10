@@ -19,7 +19,7 @@ Keywarden is a sandbox: all five adapters are in-process mocks holding synthetic
 - Request bodies are strict (`extra="forbid"`). `owner`, `org`, `created_by`, `approver` and similar fields are rejected with 422.
 - Object-level authorization: an incident from another org returns 404 on every route, so its existence isn't leaked either.
 - Roles: `viewer` (read), `analyst` (create, run, cancel), `approver` (approve, reject).
-- Limits: 8 KB request body (413), 60 requests/min per principal (429), strict id formats, scenario names from an enum.
+- Limits: 8 KB request body (413), 30 changes/min and 900 reads/min per principal (429; reads are looser because the dashboard polls), strict id formats, scenario names from an enum.
 - Errors: unhandled exceptions return `{"detail": "internal error"}` without a stack trace. Responses set `nosniff`, `no-store` and `no-referrer`.
 - One executor per incident (SQLite lease). A second run gets 409.
 
