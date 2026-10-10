@@ -10,14 +10,17 @@ def redact(obj) -> str:
 
 class Store:
     def __init__(self, path="rook.db"):
-        self.c = sqlite3.connect(path, check_same_thread=False)
+        self.c = sqlite3.connect(path, check_same_thread=False, timeout=10)
         self.lock = threading.RLock()
-        self._x("CREATE TABLE IF NOT EXISTS incidents(id TEXT PRIMARY KEY, data TEXT)")
+        self._x("CREATE TABLE IF NOT EXISTS incidents(id TEXT PRIMARY KEY, org TEXT, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS actions(id TEXT PRIMARY KEY, incident_id TEXT, seq INTEGER, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS conditions(incident_id TEXT, id TEXT, seq INTEGER, data TEXT, PRIMARY KEY(incident_id,id))")
         self._x("CREATE TABLE IF NOT EXISTS audit(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, event TEXT, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS checkpoints(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, label TEXT, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS sandbox(id INTEGER PRIMARY KEY, data TEXT)")
+        self._x("CREATE TABLE IF NOT EXISTS tool_calls(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, action_id TEXT, attempt INTEGER, outcome TEXT, data TEXT)")
+        self._x("CREATE TABLE IF NOT EXISTS approvals(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, action_id TEXT, decision TEXT, principal TEXT, data TEXT)")
+        self._x("CREATE TABLE IF NOT EXISTS runs(incident_id TEXT PRIMARY KEY, owner TEXT, expires REAL)")
         self._x("CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'audit is append-only'); END")
         self._x("CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'audit is append-only'); END")
 
@@ -37,13 +40,14 @@ class Store:
 
     # incidents
     def save_incident(self, inc: Incident):
-        self._x("INSERT OR REPLACE INTO incidents VALUES(?,?)", (inc.id, inc.model_dump_json()))
+        self._x("INSERT OR REPLACE INTO incidents VALUES(?,?,?)", (inc.id, inc.org, inc.model_dump_json()))
 
-    def incident(self, iid) -> Incident:
-        return Incident.model_validate_json(self._x("SELECT data FROM incidents WHERE id=?", (iid,))[0][0])
+    def incident(self, iid):
+        r = self._x("SELECT data FROM incidents WHERE id=?", (iid,))
+        return Incident.model_validate_json(r[0][0]) if r else None
 
-    def incidents(self):
-        rows = self._x("SELECT data FROM incidents")
+    def incidents(self, org=None):
+        rows = self._x("SELECT data FROM incidents WHERE org=?", (org,)) if org else self._x("SELECT data FROM incidents")
         return sorted((Incident.model_validate_json(r[0]) for r in rows), key=lambda i: -i.created_at)
 
     # actions
@@ -83,3 +87,43 @@ class Store:
     def checkpoints(self, iid):
         return [{"n": r[0], "ts": r[1], "label": r[2], "data": json.loads(r[3])}
                 for r in self._x("SELECT n,ts,label,data FROM checkpoints WHERE incident_id=? ORDER BY n", (iid,))]
+
+    def last_checkpoint(self, iid):
+        r = self.checkpoints(iid)
+        return r[-1] if r else None
+
+    # tool outcomes + approvals
+    def tool_call(self, iid, action_id, attempt, outcome, data=None):
+        self._x("INSERT INTO tool_calls(ts,incident_id,action_id,attempt,outcome,data) VALUES(?,?,?,?,?,?)",
+                (time.time(), iid, action_id, attempt, outcome, redact(data or {})))
+
+    def tool_calls(self, iid):
+        return [{"n": r[0], "ts": r[1], "action": r[2], "attempt": r[3], "outcome": r[4], "data": json.loads(r[5])}
+                for r in self._x("SELECT n,ts,action_id,attempt,outcome,data FROM tool_calls WHERE incident_id=? ORDER BY n", (iid,))]
+
+    def approval(self, iid, action_id, decision, principal, data=None):
+        self._x("INSERT INTO approvals(ts,incident_id,action_id,decision,principal,data) VALUES(?,?,?,?,?,?)",
+                (time.time(), iid, action_id, decision, principal, redact(data or {})))
+
+    def approvals(self, iid):
+        return [{"n": r[0], "ts": r[1], "action": r[2], "decision": r[3], "by": r[4], "data": json.loads(r[5])}
+                for r in self._x("SELECT n,ts,action_id,decision,principal,data FROM approvals WHERE incident_id=? ORDER BY n", (iid,))]
+
+    # run lease: at most one executor per incident, across threads and processes
+    def acquire_run(self, iid, owner, ttl=300):
+        now = time.time()
+        with self.lock:
+            self.c.execute("DELETE FROM runs WHERE incident_id=? AND expires<?", (iid, now))
+            try:
+                self.c.execute("INSERT INTO runs VALUES(?,?,?)", (iid, owner, now + ttl))
+                self.c.commit()
+                return True
+            except sqlite3.IntegrityError:
+                self.c.rollback()
+                return False
+
+    def release_run(self, iid, owner):
+        self._x("DELETE FROM runs WHERE incident_id=? AND owner=?", (iid, owner))
+
+    def run_active(self, iid):
+        return bool(self._x("SELECT 1 FROM runs WHERE incident_id=? AND expires>=?", (iid, time.time())))
