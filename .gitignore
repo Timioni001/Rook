@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.db
+traces/
+.venv/
+.env
+web/node_modules/
+web/.next/
+web/next-env.d.ts
