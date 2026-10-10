@@ -1,0 +1,18 @@
+{
+  "label": "after",
+  "scenario": "regression_fail",
+  "incident": "inc-8a4e65db",
+  "status": "escalated",
+  "duration_ms": 194.2,
+  "summary": "Escalated to a human: Rook could not finish safely and will not claim success. Failing checks: app:billing-app-regression.",
+  "tool_calls": 7,
+  "failed_tool_calls": 0,
+  "checkpoints": 15,
+  "audit_events": 33,
+  "conditions_passed": "12/13",
+  "workflow_steps": 14,
+  "dependent_outage_steps": 0,
+  "unhealthy_dependents": {},
+  "retries": {},
+  "neatlogs_export": false
+}

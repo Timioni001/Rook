@@ -25,10 +25,10 @@ S = Status
 TRANSITIONS = {
     S.planned: {S.authorized, S.blocked, S.needs_approval},
     S.needs_approval: {S.authorized, S.blocked},
-    S.authorized: {S.executing},
+    S.authorized: {S.executing, S.blocked},          # blocked: pre-execution policy re-check failed
     S.executing: {S.executed, S.retry_pending, S.failed, S.unknown, S.verified},
     S.executed: {S.verified, S.failed, S.unknown},
-    S.retry_pending: {S.executing, S.failed},
+    S.retry_pending: {S.executing, S.failed, S.blocked},
     S.unknown: {S.verified, S.retry_pending, S.failed},
     S.verified: set(),
     S.failed: set(),
@@ -40,21 +40,44 @@ class InvalidTransition(Exception):
     ...
 
 
+class IncidentStatus(str, Enum):
+    investigating = "investigating"
+    ready = "ready"
+    awaiting_approval = "awaiting_approval"
+    remediating = "remediating"
+    escalated = "escalated"
+    closed_verified = "closed_verified"
+    open = "open"
+
+
 class Incident(BaseModel):
     id: str
+    org: str
+    created_by: str
     subject: str
-    status: str = "open"
+    title: str = ""
+    severity: str = "high"
+    scenario: str = "signature"
+    playbook: str = "offboarding"      # which kind of incident: see rook/playbooks.py
+    status: str = IncidentStatus.investigating.value
     created_at: float = Field(default_factory=time.time)
+    closed_at: Optional[float] = None
     relationships: list[dict] = []     # fingerprints only, never secret values
+    graph: dict = {}                   # {nodes: [...], edges: [...]}
+    findings: list[dict] = []          # plain-language, evidence-backed
     exposure: str = ""
+    ticket: Optional[str] = None
 
 
 class Action(BaseModel):
     id: str
     incident_id: str
-    type: str                 # disable_account | rotate_credential | repair_config
+    type: str                 # one of policy.ALLOWED, e.g. revoke_credential or rollback_service
     target: str
     params: dict = {}
+    depends_on: list[str] = []
+    summary: str = ""         # what this does, in plain language
+    risk: str = "low"         # low | medium (production change, reversible) | high (irreversible)
     status: Status = Status.planned
     retries: int = 0
     max_retries: int = 3
@@ -82,3 +105,14 @@ class Condition(BaseModel):
     result: Optional[bool] = None     # None = not evaluated / inconclusive
     evidence: dict = {}
     evaluated_at: Optional[float] = None
+
+
+class Principal(BaseModel):
+    """An authenticated caller. Always derived server-side from the credential presented."""
+    id: str
+    org: str
+    roles: list[str] = []
+    name: str = ""
+
+    def can(self, role: str) -> bool:
+        return role in self.roles

@@ -1,0 +1,20 @@
+{
+  "label": "after",
+  "scenario": "persistent",
+  "incident": "inc-f63675a9",
+  "status": "escalated",
+  "duration_ms": 208.1,
+  "summary": "Escalated to a human: Rook could not finish safely and will not claim success. inc-f63675a9-a4 update_dependent on app:billing-app is failed; inc-f63675a9-a6 revoke_credential on cred-pay is blocked; inc-f63675a9-a7 scrub_exposed_secret on billing-api/.env.test is blocked. Failing checks: cred-pay-old-rejected, cred-pay-no-dependents-on-old, repo:billing-api/.env.test-scrubbed, app:billing-app-uses-replacement.",
+  "tool_calls": 8,
+  "failed_tool_calls": 4,
+  "checkpoints": 17,
+  "audit_events": 37,
+  "conditions_passed": "9/13",
+  "workflow_steps": 16,
+  "dependent_outage_steps": 0,
+  "unhealthy_dependents": {},
+  "retries": {
+    "inc-f63675a9-a4": 4
+  },
+  "neatlogs_export": false
+}
