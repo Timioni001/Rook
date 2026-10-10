@@ -32,9 +32,10 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 - New **service outage** playbook: alert → deploy correlation → pause pipeline → rollback to a known-good revision → resume with the bad revision blocked, with 7 closure checks and policy rules R4 (no rollback while auto-deploy would undo it) and R8 (only roll back unattended to a proven revision). 80 tests.
 - Builds now target Ubuntu on WSL: `scripts/setup-wsl.sh`, `scripts/dev.sh`, LF line endings enforced, and the full suite passes on Python 3.14 (the Ubuntu 26.04 default).
 
+**09:30: Entire on.** The team reversed the earlier skip. Entire now records the agent sessions and links them to commits through `Entire-Checkpoint` trailers.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.
-- Entire: the team decided not to use it for this build.
 - Link the existing cfo.ai plan.
 - Record the demo video and post #neatHack updates.
