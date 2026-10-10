@@ -15,7 +15,7 @@ def spans():
     exp = InMemorySpanExporter()
     tp = TracerProvider()
     tp.add_span_processor(SimpleSpanProcessor(exp))
-    assert obs.init_neatlogs(tracer_provider=tp)
+    assert obs.init_neatlogs(tracer_provider=tp, capture_logs=False)   # log export would try the network
     yield exp
     obs.shutdown()
 
@@ -60,3 +60,28 @@ def test_span_records_errors(spans):
             raise ValueError("boom")
     s = [x for x in spans.get_finished_spans() if x.name == "execute"][0]
     assert s.attributes["rook.error"] == "ValueError" and not s.status.is_ok
+
+
+def test_neatlogs_features_sessions_guardrails_tools(spans):
+    rep = run("signature")
+    iid = rep["incident"]["id"]
+    got = spans.get_finished_spans()
+    roots = [s for s in got if s.name in ("incident.start", "incident.run")]
+    assert roots and all(s.attributes["neatlogs.session.id"] == iid for s in roots)
+    appr = next(s for s in got if s.name == "approval.decide")
+    assert appr.attributes["neatlogs.guardrail.passed"] is True
+    blocked_or_open = next(s for s in got if s.name == "closure.evaluate"
+                           and s.attributes["neatlogs.guardrail.passed"] is False)
+    assert "needs_approval" in blocked_or_open.attributes["neatlogs.guardrail.output"]
+    tool = next(s for s in got if s.name == "execute")
+    assert tool.attributes["neatlogs.tool.name"].endswith(".disable_account")
+    assert "idempotency_key" in tool.attributes["neatlogs.tool.parameters"]
+    ret = next(s for s in got if s.name == "discover.dependencies")
+    assert ret.attributes["neatlogs.retriever.documents.1"] == "cloud:payments-worker"
+    assert all("version:" in s.attributes.get("neatlogs.tags", "version:") for s in got)
+
+
+def test_export_mask_replaces_secret_values():
+    span = {"attributes": {"x": "key sk_test_SYNTH_payments_v1", "n": [{"y": "sk_test_SYNTH_a"}]}}
+    out = json.dumps(obs.mask_span(span))
+    assert "sk_test_SYNTH" not in out and "fp:" in out
