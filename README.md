@@ -77,7 +77,7 @@ Rook starts from the completed offboarding ticket and works through these steps:
 
 ## Run it
 
-Requirements: Python 3.10 to 3.14 and Node 18 or later. **On Ubuntu/WSL, run `./scripts/setup-wsl.sh` once, then `./scripts/dev.sh` (local) or `./scripts/share.sh` (public link).**
+Requirements: Python 3.10 to 3.13 (neatlogs doesn't support 3.14 yet) and Node 18 or later. **On Ubuntu/WSL, run `./scripts/setup-wsl.sh` once, then `./scripts/dev.sh` (local) or `./scripts/share.sh` (public link).**
 
 ```bash
 pip install -r requirements.txt
