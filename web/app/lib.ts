@@ -2,8 +2,8 @@ export type Identity = { key: string; token: string; label: string }
 
 // Local demo identities issued by the backend when ROOK_DEMO_TOKENS=1 (the default for local runs).
 export const IDENTITIES: Identity[] = [
-  { key: 'analyst', token: 'demo-analyst-token', label: 'Sam · security analyst' },
-  { key: 'approver', token: 'demo-approver-token', label: 'Priya · security lead (approver)' },
+  { key: 'analyst', token: 'demo-analyst-token', label: 'Sam · IT operations' },
+  { key: 'approver', token: 'demo-approver-token', label: 'Priya · IT lead (approver)' },
   { key: 'viewer', token: 'demo-viewer-token', label: 'Lee · read only' },
   { key: 'other', token: 'demo-other-org-token', label: 'Eve · a different company' },
 ]
@@ -65,6 +65,15 @@ export const ACTION_LABEL: Record<string, string> = {
   update_dependent: 'Move service to new key',
   revoke_credential: 'Revoke old key',
   scrub_exposed_secret: 'Remove leaked key from code',
+  pause_pipeline: 'Pause auto-deploy',
+  rollback_service: 'Roll back to known-good revision',
+  resume_pipeline: 'Resume auto-deploy, bad revision blocked',
+}
+
+// What each playbook is for, in the buyer's words.
+export const PLAYBOOK_COPY: Record<string, { button: string; pitch: string }> = {
+  offboarding: { button: 'Investigate offboarding', pitch: 'Someone left, but their accounts and API keys live on.' },
+  outage: { button: 'Investigate checkout-api alert', pitch: 'A production service started failing right after a deploy.' },
 }
 
 const EVENT_TEXT: Record<string, (d: any) => string> = {
@@ -101,6 +110,7 @@ const EVENT_TEXT: Record<string, (d: any) => string> = {
   ticket_updated: (d) => `Ticket ${d.ticket} updated (${d.status})`,
   cancelled: () => 'Run cancelled',
   rolled_back: (d) => `Rolled ${d.target} back to the previous key so it keeps working`,
+  ticket_open_failed: () => 'Could not open a tracking ticket (continuing; tracking never blocks the fix)',
   rollback_skipped: (d) => `No rollback for ${d.action}: ${d.reason}`,
   rollback_failed: (d) => `Rollback of ${d.action} failed: ${d.error}`,
   cancel_requested: (d) => `Cancel requested by ${d.by}`,

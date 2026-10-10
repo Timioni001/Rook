@@ -1,17 +1,20 @@
-"""Rook: a bounded, tool-using incident-response agent with Verified Closure.
+"""Rook: a bounded, tool-using operations agent that resolves IT incidents with Verified Closure.
 
 INVESTIGATE -> DEFINE CLOSURE -> PLAN (dependency graph) -> AUTHORIZE -> EXECUTE -> VERIFY
 -> CHECKPOINT -> RECOVER / ESCALATE -> CLOSE ONLY ON EVIDENCE.
 
 All state lives in SQLite, so a run can stop at any point (crash, approval wait, cancel) and be
-resumed by a new process from the last checkpoint.
+resumed by a new process from the last checkpoint. What differs between incident types (offboarding,
+service outage, ...) lives in rook/playbooks.py; this loop is the same for all of them.
 """
 import json, os, time, uuid
 from .domain import Action, Condition, Incident, IncidentStatus as IS, Status, fp
 from .sandbox import Transient, Permanent, Timeout
 from . import policy
-from .verification import applied, build_conditions, evaluate, verify_action
+from .verification import applied, evaluate, verify_action
 from .obs import log, span
+from .playbooks import (PLAYBOOKS, RuleBasedPlanner, build_graph, findings, investigate,  # noqa: F401
+                        make_action, playbook_for)
 
 S = Status
 RUNNABLE = {S.authorized, S.retry_pending, S.executing, S.executed, S.unknown}
@@ -24,6 +27,20 @@ TOOL_DOCS = {
     "update_dependent": "Point an application or cloud service at the newest credential version",
     "revoke_credential": "Permanently revoke one credential version in the vault",
     "scrub_exposed_secret": "Replace a leaked key in a tracked file with a placeholder",
+    "pause_pipeline": "Turn off auto-deploy for a service so nothing redeploys over a fix",
+    "rollback_service": "Deploy a previous revision of a cloud service",
+    "resume_pipeline": "Turn auto-deploy back on, with a bad revision blocked",
+}
+# What undoing each action would take, shown to approvers and reviewers.
+UNDO = {
+    "disable_account": "Yes. Re-enable the account.",
+    "issue_replacement": "Yes. The old key keeps working until it is revoked.",
+    "update_dependent": "Yes. Rook rolls the service back to the old key automatically if it breaks.",
+    "revoke_credential": "No. The old key stops working everywhere, permanently.",
+    "scrub_exposed_secret": "Yes, from git history, but the key it removes is already dead.",
+    "pause_pipeline": "Yes. Resume the pipeline (Rook does this as part of the plan).",
+    "rollback_service": "Yes. Redeploy the newer revision.",
+    "resume_pipeline": "Yes. Pause it again.",
 }
 
 
@@ -33,137 +50,6 @@ class SimulatedCrash(BaseException):      # BaseException so no handler swallows
 
 class RunInProgress(Exception):
     ...
-
-
-# ---------------------------------------------------------------- investigation
-
-def investigate(sb, subject):
-    """Observed relationships, graph and findings. Fingerprints and paths only; no secret values."""
-    rel = []
-    person = sb.apps.directory(subject)
-    for name in ("github", "cloud", "pm"):
-        for u, acc in sb.account_service(name).accounts().items():
-            if acc["owner"] == subject:
-                rel.append({"rel": "has_account", "service": name, "user": u, "status": acc["status"]})
-    for cid in sorted(sb.vault.creds()):
-        m = sb.vault.meta(cid)
-        if m["owner"] != subject:
-            continue
-        active = [v for v in m["versions"] if v["status"] == "active"]
-        cur = active[-1] if active else m["versions"][-1]
-        deps = sb.dependents_of_fp(cur["fp"])
-        exposed = sb.github.find_secret(cur["fp"])
-        rel.append({"rel": "owns_credential", "cred": cid, "status": "active" if active else "inactive",
-                    "version": cur["v"], "fp": cur["fp"], "purpose": m["purpose"],
-                    "created_by": m["created_by"], "created_at": m["created_at"],
-                    "dependents": deps, "recorded_used_by": m["used_by"],
-                    "unrecorded_dependents": [d for d in deps if d not in m["used_by"]],
-                    "exposed_in": exposed,
-                    "exposure_history": [h for p in exposed for h in sb.github.commit_history(p)]})
-    for o in sb.ownerless_accounts():          # not this subject's, but found on the same sweep
-        rel.append({"rel": "ownerless_account", **o})
-    return person, rel, build_graph(subject, person, rel), findings(subject, person, rel)
-
-
-def build_graph(subject, person, rel):
-    nodes = [{"id": subject, "kind": "identity", "label": person.get("name", subject),
-              "status": person.get("status", "unknown"), "detail": person.get("type", "")}]
-    edges = []
-    for r in rel:
-        if r["rel"] == "has_account":
-            nid = f"{r['service']}:{r['user']}"
-            nodes.append({"id": nid, "kind": "account", "label": f"{r['service']} / {r['user']}", "status": r["status"]})
-            edges.append({"from": subject, "to": nid, "rel": "has account"})
-        elif r["rel"] == "owns_credential":
-            nodes.append({"id": r["cred"], "kind": "credential", "label": f"{r['cred']} ({r['fp']})",
-                          "status": r["status"], "detail": r["purpose"]})
-            edges.append({"from": subject, "to": r["cred"], "rel": "created"})
-            for d in r["dependents"]:
-                nodes.append({"id": d, "kind": "dependent", "label": d, "status": "uses old key",
-                              "detail": "not in vault metadata" if d in r["unrecorded_dependents"] else ""})
-                edges.append({"from": d, "to": r["cred"], "rel": "authenticates with"})
-            for p in r["exposed_in"]:
-                nodes.append({"id": f"repo:{p}", "kind": "repo", "label": p, "status": "exposed"})
-                edges.append({"from": r["cred"], "to": f"repo:{p}", "rel": "committed to"})
-    return {"nodes": nodes, "edges": edges}
-
-
-def findings(subject, person, rel):
-    out = []
-    name = person.get("name", subject)
-    dis = [f"{r['service']}/{r['user']}" for r in rel if r["rel"] == "has_account" and r["status"] == "disabled"]
-    act = [f"{r['service']}/{r['user']}" for r in rel if r["rel"] == "has_account" and r["status"] == "active"]
-    out.append({"severity": "info", "text": f"{name} ({person.get('type', 'unknown type')}) is "
-                f"{person.get('status', 'unknown')} in the directory since {person.get('disabled_at', 'n/a')}.",
-                "evidence": {"directory_status": person.get("status")}})
-    if act:
-        out.append({"severity": "medium", "text": f"Accounts still active after offboarding: {', '.join(act)}. "
-                    f"Already disabled: {', '.join(dis) or 'none'}.", "evidence": {"active": act, "disabled": dis}})
-    for r in rel:
-        if r["rel"] != "owns_credential" or r["status"] != "active":
-            continue
-        out.append({"severity": "high", "text": f"{r['purpose']} {r['cred']} ({r['fp']}) created by {r['created_by']} "
-                    f"on {r['created_at'][:10]} is still active.", "evidence": {"cred": r["cred"], "version": r["version"]}})
-        if r["dependents"]:
-            out.append({"severity": "high", "text": f"It is in live use by {', '.join(r['dependents'])}; revoking it "
-                        "first would take them down, so each must move to a replacement key before revocation.",
-                        "evidence": {"dependents": r["dependents"]}})
-        if r["unrecorded_dependents"]:
-            out.append({"severity": "medium", "text": f"{', '.join(r['unrecorded_dependents'])} uses the key but is "
-                        "missing from the vault's metadata; found by scanning live configuration.",
-                        "evidence": {"recorded_used_by": r["recorded_used_by"]}})
-        for h in r["exposure_history"]:
-            out.append({"severity": "high", "text": f"The key is committed in {h['repo']}/{h['path']} "
-                        f"(by {h['actor']} on {h['at'][:10]}), so it must be treated as leaked.", "evidence": h})
-    for r in rel:
-        if r["rel"] == "ownerless_account":
-            out.append({"severity": "medium", "text": f"{r['service']} account '{r['user']}' has no owner in any "
-                        "directory. Rook will not touch access it cannot attribute; a person needs to assign or "
-                        "remove it.", "evidence": {"service": r["service"], "user": r["user"], "status": r["status"]}})
-    return out
-
-
-def explain(person, rel):
-    return " ".join(f["text"] for f in findings(person.get("id", ""), person, rel)[1:]) if rel else ""
-
-
-# ---------------------------------------------------------------- planning
-
-def make_action(iid, n, type, target, params, depends_on=(), summary="", risk="low"):
-    return Action(id=f"{iid}-a{n}", incident_id=iid, type=type, target=target, params=params,
-                  depends_on=list(depends_on), summary=summary, risk=risk,
-                  idem_key=f"{iid}:{type}:{params.get('service','')}:{target}")
-
-
-class RuleBasedPlanner:
-    """Deterministic plan: contain accounts, then replace -> repoint dependents -> revoke."""
-    def plan(self, rel, iid):
-        acts = []
-
-        def add(t, target, deps=(), summary="", risk="low", **p):
-            a = make_action(iid, len(acts) + 1, t, target, p, deps, summary, risk)
-            acts.append(a)
-            return a
-        for r in rel:
-            if r["rel"] == "has_account" and r["status"] == "active":
-                add("disable_account", r["user"], service=r["service"],
-                    summary=f"Disable the leftover {r['service']} account '{r['user']}'.")
-        for r in rel:
-            if r["rel"] != "owns_credential" or r["status"] != "active":
-                continue
-            c = r["cred"]
-            issue = add("issue_replacement", c, service="vault", old_version=r["version"], old_fp=r["fp"],
-                        summary=f"Create a new version of {c}. The old key keeps working for now.")
-            ups = [add("update_dependent", d, [issue.id], service=d.split(":")[0], cred_id=c,
-                       old_fp=r["fp"], old_version=r["version"],
-                       summary=f"Point {d} at the new key and check it is healthy.") for d in r["dependents"]]
-            rev = add("revoke_credential", c, [u.id for u in ups] + [issue.id], service="vault", cred_id=c,
-                      version=r["version"], old_fp=r["fp"], risk="high",
-                      summary=f"Permanently revoke the old key {r['fp']}. Anything still using it will stop working.")
-            for path in r.get("exposed_in", []):
-                add("scrub_exposed_secret", path, [rev.id], service="github", cred_id=c, old_fp=r["fp"],
-                    summary=f"Remove the leaked (now dead) key from {path} so scanners stop flagging it.")
-        return acts
 
 
 class LLMPlanner:
@@ -205,7 +91,8 @@ class LLMPlanner:
 def enforce_order(plan):
     """Add the dependency edges safety requires (whatever the planner said) and topologically sort.
 
-    issue_replacement -> update_dependent(s) -> revoke_credential, per credential.
+    issue_replacement -> update_dependent(s) -> revoke_credential, per credential;
+    pause_pipeline -> rollback_service -> resume_pipeline, per service.
     """
     by_id = {a.id: a for a in plan}
     for a in plan:
@@ -218,6 +105,10 @@ def enforce_order(plan):
                     and (x.target == cred or x.params.get("cred_id") == cred)]
         if a.type == "scrub_exposed_secret":             # only touch the file once the key is dead
             need = [x.id for x in plan if x.type == "revoke_credential" and x.target == cred]
+        if a.type == "rollback_service":                 # freeze the pipeline before rolling back
+            need = [x.id for x in plan if x.type == "pause_pipeline" and x.target == a.target]
+        if a.type == "resume_pipeline":                  # unfreeze only once the rollback is verified
+            need = [x.id for x in plan if x.type == "rollback_service" and x.target == a.target]
         a.depends_on = sorted(set(d for d in a.depends_on if d in by_id) | set(need))
     order, seen, temp = [], set(), set()
 
@@ -243,7 +134,7 @@ class Engine:
     def __init__(self, store, sb, planner=None, max_steps=200, max_retries=3,
                  sleep=time.sleep, crash_after=None, step_delay=0.0):
         self.store, self.sb = store, sb
-        self.planner = planner or (LLMPlanner() if os.getenv("ROOK_PLANNER") == "llm" else RuleBasedPlanner())
+        self.planner = planner          # None: the playbook's own planner (or the model, for offboarding)
         self.max_steps, self.max_retries = max_steps, max_retries
         self.sleep, self.crash_after, self.step_delay = sleep, crash_after, step_delay
         self.executions = 0
@@ -253,34 +144,40 @@ class Engine:
         self.cancelled = True
 
     # ---- INVESTIGATE -> DEFINE CLOSURE -> PLAN -> AUTHORIZE ----
-    def start(self, subject=None, org="acme", created_by="system", scenario=None, extra_actions=()):
+    def _planner(self, pb):
+        if self.planner is not None:
+            return self.planner
+        if pb.key == "offboarding" and os.getenv("ROOK_PLANNER") == "llm":
+            return LLMPlanner()
+        return pb
+
+    def start(self, subject=None, org="acme", created_by="system", scenario=None, extra_actions=(), playbook=None):
         iid = "inc-" + uuid.uuid4().hex[:8]
+        pb = playbook_for(scenario, playbook)
         with span("incident.start", session=iid, user=created_by, user_meta={"org": org},
-                  incident=iid, org=org, scenario=scenario or "") as root:
-            if subject is None:                       # trigger: completed offboarding tickets
-                done = self.sb.pm.completed_offboardings()
-                subject = next(iter(done.values()))["subject"] if done else None
+                  incident=iid, org=org, scenario=scenario or "", playbook=pb.key) as root:
+            if subject is None:                       # trigger: the playbook's own (ticket, alert, ...)
+                subject = pb.find_subject(self.sb)
                 if subject is None:
-                    raise ValueError("no completed offboarding to investigate")
-            with span("investigate", incident=iid) as sp:
-                person, rel, graph, finds = investigate(self.sb, subject)
-                sp.set(accounts=sum(r["rel"] == "has_account" for r in rel),
+                    raise ValueError(f"nothing to investigate: no {pb.trigger.lower()} found")
+            with span("investigate", incident=iid, playbook=pb.key) as sp:
+                person, rel, graph, finds = pb.investigate(self.sb, subject)
+                sp.set(relationships=len(rel), findings=len(finds),
+                       accounts=sum(r["rel"] == "has_account" for r in rel),
                        active_credentials=sum(r["rel"] == "owns_credential" and r["status"] == "active" for r in rel))
             with span("discover.dependencies", incident=iid) as sp:
-                deps = [d for r in rel if r["rel"] == "owns_credential" for d in r["dependents"]]
-                sp.retriever("config scan for " + ", ".join(r["fp"] for r in rel if r["rel"] == "owns_credential"),
-                             deps)
-                sp.set(dependents=len(deps), unrecorded=sum(len(r.get("unrecorded_dependents", [])) for r in rel
-                                                            if r["rel"] == "owns_credential"))
+                query, deps, attrs = pb.discovery(rel)
+                sp.retriever(query, deps)
+                sp.set(**attrs)
             inc = Incident(id=iid, org=org, created_by=created_by, subject=subject, scenario=scenario or "custom",
-                           title=f"Active credential after offboarding: {person.get('name', subject)}",
+                           playbook=pb.key, title=pb.title(person, subject),
                            relationships=rel, graph=graph, findings=finds,
                            exposure=" ".join(f["text"] for f in finds),
                            severity="high" if any(f["severity"] == "high" for f in finds) else "medium")
             self.store.save_incident(inc)
             self.store.audit(iid, "investigated", {"relationships": rel, "findings": [f["text"] for f in finds]})
 
-            conds = build_conditions(rel)                  # defined BEFORE any remediation
+            conds = pb.conditions(rel)                     # defined BEFORE any remediation
             self.store.save_conditions(iid, conds)
             self.store.audit(iid, "closure_conditions_defined", {"conditions": [c.id for c in conds]})
 
@@ -290,10 +187,11 @@ class Engine:
             except (Transient, Timeout, Permanent) as e:   # tracking is best effort, never blocks containment
                 self.store.audit(iid, "ticket_open_failed", {"error": type(e).__name__})
 
-            with span("plan", incident=iid) as sp:
-                plan = self.planner.plan(rel, iid) + list(extra_actions)
+            with span("plan", incident=iid, playbook=pb.key) as sp:
+                planner = self._planner(pb)
+                plan = planner.plan(rel, iid) + list(extra_actions)
                 plan = enforce_order(plan)
-                sp.set(actions=len(plan), planner=type(self.planner).__name__)
+                sp.set(actions=len(plan), planner=type(planner).__name__)
             # stable ids in execution order; references rewritten accordingly
             rename = {a.id: f"{iid}-a{i+1}" for i, a in enumerate(plan)}
             seen = set()
@@ -561,6 +459,12 @@ class Engine:
             return self.sb.vault.revoke(a.target, p["version"], a.idem_key)
         if a.type == "scrub_exposed_secret":
             return self.sb.github.scrub_secret(a.target, p["old_fp"], a.idem_key)
+        if a.type == "pause_pipeline":
+            return self.sb.cloud.pause_pipeline(a.target, a.idem_key)
+        if a.type == "rollback_service":
+            return self.sb.cloud.rollback(a.target, p["to_revision"], a.idem_key)
+        if a.type == "resume_pipeline":
+            return self.sb.cloud.resume_pipeline(a.target, p["block_revision"], a.idem_key)
         raise Permanent("unsupported action")
 
     # ---- compensation: undo a dependent update that broke the service ----
@@ -615,9 +519,10 @@ class Engine:
                       for a in acts if a.status != S.verified]
         calls = self.store.tool_calls(iid)
         by_id = {a.id: a for a in acts}
+        pb = playbook_for(key=inc.playbook)
         dead_at = next((e["ts"] for e in events if e["event"] in ("verification_verified", "reconciled_verified")
                         and by_id.get(e["data"].get("action")) is not None
-                        and by_id[e["data"]["action"]].type == "revoke_credential"), None)
+                        and by_id[e["data"]["action"]].type == pb.contain_type), None)
         if inc.status in (IS.ready.value, IS.investigating.value) and not calls:
             status = inc.status
         elif closed:
@@ -632,17 +537,18 @@ class Engine:
         return {
             "incident": inc.model_dump(mode="json"),
             "status": status,
-            "summary": summarize(inc, acts, status, bad),
+            "summary": summarize(inc, acts, status, bad, pb),
+            "playbook": {"key": pb.key, "name": pb.name, "trigger": pb.trigger},
             "exposure": inc.exposure,
             "invariants": inv,
             "conditions": [c.model_dump(mode="json") for c in conds],
             "actions": [{"id": a.id, "type": a.type, "target": a.target, "service": a.params.get("service"),
                          "status": a.status.value,
                          "depends_on": a.depends_on, "summary": a.summary, "risk": a.risk,
-                         "retries": a.retries, "policy": a.policy, "result": a.result,
+                         "retries": a.retries, "policy": a.policy, "result": a.result, "undo": UNDO.get(a.type, ""),
                          "evidence": a.evidence} for a in acts],
             "approvals": self.store.approvals(iid),
-            "follow_ups": follow_ups(inc, acts),
+            "follow_ups": pb.follow_ups(inc, acts),
             "tool_calls": calls,
             "unresolved": unresolved,
             "closure_blocked_reason": None if closed else blocked_reason(inv, bad, unresolved),
@@ -652,7 +558,10 @@ class Engine:
                         "checkpoints": len(self.store.checkpoints(iid)),
                         "audit_events": len(events),
                         "rollbacks": sum(1 for a in acts if a.result.get("rolled_back")),
-                        "seconds_until_old_key_dead": round(dead_at - inc.created_at, 1) if dead_at else None,
+                        "contain_label": pb.contain_label,
+                        "seconds_to_contain": round(dead_at - inc.created_at, 1) if dead_at else None,
+                        "seconds_until_old_key_dead": (round(dead_at - inc.created_at, 1)
+                                                       if dead_at and pb.key == "offboarding" else None),
                         "seconds_until_closed": round(inc.closed_at - inc.created_at, 1) if inc.closed_at else None},
         }
 
@@ -684,35 +593,19 @@ class Engine:
         return rep
 
 
-def follow_ups(inc, acts):
-    """Work Rook deliberately leaves to a person, so nothing is silently dropped."""
-    out = []
-    for r in inc.relationships:
-        if r["rel"] == "ownerless_account":
-            out.append(f"Assign an owner to, or remove, the ownerless {r['service']} account '{r['user']}'.")
-    if any(a.type == "scrub_exposed_secret" and a.status == S.verified for a in acts):
-        paths = [a.target for a in acts if a.type == "scrub_exposed_secret"]
-        out.append(f"Git history of {', '.join(paths)} still contains the revoked key. It no longer works; "
-                   "rewrite history only if policy requires it.")
-    for a in acts:
-        if a.result.get("rolled_back"):
-            out.append(f"{a.target} was rolled back to the previous key after its update failed. Fix the service, "
-                       "then run the incident again.")
-    return out
-
-
 def evidence_pack(rep, audit, chain):
     """Markdown evidence for auditors: what happened, who approved, what was verified, and integrity."""
     inc = rep["incident"]
     L = [f"# Incident evidence: {inc['id']}", "",
          f"- Title: {inc['title']}", f"- Status: **{rep['status']}**", f"- Organisation: {inc['org']}",
          f"- Opened by: {inc['created_by']}", f"- Tracking ticket: {inc.get('ticket') or 'none'}",
-         f"- Old key dead after: {rep['metrics']['seconds_until_old_key_dead']} s",
+         f"- Incident type: {rep['playbook']['name']}",
+         f"- {rep['metrics']['contain_label']}: {rep['metrics']['seconds_to_contain']} s",
          f"- Closed after: {rep['metrics']['seconds_until_closed']} s", "",
          "## Summary", rep["summary"], "", "## Findings"]
     L += [f"- [{f['severity']}] {f['text']}" for f in inc["findings"]]
-    L += ["", "## Actions", "| # | Action | Target | Status | Attempts | Policy |", "|---|---|---|---|---|---|"]
-    L += [f"| {i+1} | {a['type']} | {a['target']} | {a['status']} | {a['retries'] + 1} | {a['policy'].get('rule')} |"
+    L += ["", "## Actions", "| # | Action | Target | Status | Attempts | Policy | Reversible |", "|---|---|---|---|---|---|---|"]
+    L += [f"| {i+1} | {a['type']} | {a['target']} | {a['status']} | {a['retries'] + 1} | {a['policy'].get('rule')} | {a['undo']} |"
           for i, a in enumerate(rep["actions"])]
     L += ["", "## Approvals"] + ([f"- {x['decision']} by {x['by']} ({x['action']})" for x in rep["approvals"]] or ["- none"])
     L += ["", "## Closure checks (independently observed)", "| Check | Result | Evidence |", "|---|---|---|"]
@@ -741,11 +634,10 @@ def blocked_reason(inv, bad, unresolved):
     return "; ".join(out) or "not yet evaluated"
 
 
-def summarize(inc, acts, status, bad):
+def summarize(inc, acts, status, bad, pb):
     done = sum(a.status == S.verified for a in acts)
     if status == IS.closed_verified.value:
-        return (f"Closed with evidence: all {len(acts)} actions were independently verified and every closure "
-                "check passed. The old key is rejected, the replacement works, and every dependent is healthy.")
+        return pb.closed_summary(len(acts))
     if status == IS.awaiting_approval.value:
         waiting = [a for a in acts if a.status == S.needs_approval]
         return (f"{done} of {len(acts)} actions verified. Waiting for a person to approve: "

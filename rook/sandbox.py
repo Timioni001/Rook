@@ -1,4 +1,4 @@
-"""Five stateful SANDBOXED MOCK adapters over one persisted local state.
+"""Five stateful SANDBOXED MOCK adapters over one persisted local state: one small company.
 
 Nothing here talks to a real system. All credentials are synthetic (sk_test_SYNTH_*).
 Every state change goes through Sandbox.mutate(), which provides idempotency and
@@ -33,7 +33,19 @@ SCENARIOS = {
     "faulty_update": ("billing-app accepts the update but stores the wrong key", {}, {"faulty_update": ["app:billing-app"]}),
     "regression_fail": ("billing-app is healthy but its payment regression test fails", {},
                         {"regression_fail": ["app:billing-app"]}),
+    # service outage playbook
+    "outage": ("checkout-api's rollback call times out, but the rollback did happen",
+               {"cloud.rollback": ["timeout_applied"]}, {}),
+    "outage_clean": ("checkout-api outage with no injected faults", {}, {}),
+    "outage_wrong_cause": ("Rolling back does not fix checkout-api: the deploy is not the cause", {},
+                           {"outage_persists": ["checkout-api"]}),
+    "outage_rollback_down": ("The cloud's rollback API keeps failing", {"cloud.rollback": ["transient"] * 20}, {}),
 }
+SCENARIO_PLAYBOOK = {k: "outage" for k in SCENARIOS if k.startswith("outage")}
+
+
+def playbook_of(scenario):
+    return SCENARIO_PLAYBOOK.get(scenario or "", "offboarding")
 
 
 def seed() -> dict:
@@ -55,12 +67,25 @@ def seed() -> dict:
                          "asmith": {"status": "active", "owner": "ident-asmith"}},
             "services": {"payments-worker": {"env": {"PAYMENTS_KEY": OLD}, "team": "payments"},
                          "reports-cron": {"env": {"REPORTS_KEY": REPORTS}, "team": "analytics"}},
+            # revisioned deployments + their auto-deploy pipeline (service outage playbook)
+            "deployments": {"checkout-api": {"team": "commerce", "current": 42, "revisions": {
+                "41": {"env": {"DB_HOST": "db-primary"}, "deployed_at": "2026-10-09T08:40:00Z",
+                       "deployed_by": "deploy-bot", "commit": "4b1d0a7", "message": "Add order notes field",
+                       "healthy_minutes": 1452},
+                "42": {"env": {"DB_HOST": "db-replica-old"}, "deployed_at": "2026-10-10T08:52:00Z",
+                       "deployed_by": "deploy-bot", "commit": "9f3c2e1", "message": "Point checkout at new database host",
+                       "healthy_minutes": 0}}}},
+            "pipelines": {"checkout-api": {"auto_deploy": True, "desired": 42, "blocked": []}},
+            "databases": {"db-primary": "up", "db-replica-old": "decommissioned"},
         },
         "pm": {
             "accounts": {"jdoe": {"status": "active", "owner": "ident-jdoe"},
                          "ghost": {"status": "active", "owner": None}},     # orphaned account fixture
             "tickets": {"OPS-112": {"title": "Offboard contractor Jordan Doe", "status": "done",
-                                    "subject": "ident-jdoe", "comments": []}},
+                                    "subject": "ident-jdoe", "comments": []},
+                        "OPS-131": {"title": "ALERT: checkout-api 5xx error rate above 30%", "status": "open",
+                                    "kind": "alert", "subject": "cloud:checkout-api",
+                                    "opened_at": "2026-10-10T08:53:00Z", "comments": []}},
             "next_ticket": 200,
         },
         "vault": {"credentials": {
@@ -75,7 +100,8 @@ def seed() -> dict:
                              "used_by": ["app:reports-app", "cloud:reports-cron"]},
         }},
         "apps": {"billing-app": {"config": {"PAYMENTS_KEY": OLD}},
-                 "reports-app": {"config": {"REPORTS_KEY": REPORTS}}},
+                 "reports-app": {"config": {"REPORTS_KEY": REPORTS}},
+                 "storefront": {"config": {"CHECKOUT_URL": "https://checkout-api.internal"}}},
         "failures": {}, "flags": {}, "applied": {}, "calls": 0, "mutations": 0,
     }
 
@@ -158,6 +184,55 @@ class Cloud(AccountService):
             return {"dependent": f"cloud:{svc}", "env_key": key, "config_fp": fp(env[key])}
         return self.core.mutate("cloud.update_env", idem, fn)
 
+    # ---- revisioned deployments and the pipeline that keeps redeploying its desired revision ----
+    def deployment(self, svc):
+        return self.s["cloud"]["deployments"][svc]
+
+    def revision(self, svc, rev):
+        return self.deployment(svc)["revisions"][str(rev)]
+
+    def pipeline(self, svc):
+        return self.s["cloud"]["pipelines"][svc]
+
+    def database(self, host):
+        return self.s["cloud"]["databases"].get(host, "unknown")
+
+    def service_healthy(self, svc):
+        """Health probe: the running revision reaches a working database and nothing else is wrong."""
+        env = self.revision(svc, self.deployment(svc)["current"])["env"]
+        return self.database(env.get("DB_HOST")) == "up" and svc not in self.s["flags"].get("outage_persists", [])
+
+    def error_rate(self, svc):
+        return 0.004 if self.service_healthy(svc) else 0.38
+
+    def pause_pipeline(self, svc, idem):
+        def fn():
+            self.pipeline(svc)["auto_deploy"] = False
+            return {"service": svc, "auto_deploy": False}
+        return self.core.mutate("cloud.pipeline_pause", idem, fn)
+
+    def rollback(self, svc, rev, idem):
+        def fn():
+            d, p = self.deployment(svc), self.pipeline(svc)
+            d["current"] = rev
+            out = {"service": svc, "running_revision": rev}
+            # what bites people: an auto-deploy pipeline puts its desired revision straight back
+            if p["auto_deploy"] and p["desired"] != rev and p["desired"] not in p["blocked"]:
+                d["current"] = p["desired"]
+                out["pipeline_redeployed"] = p["desired"]
+            return out
+        return self.core.mutate("cloud.rollback", idem, fn)
+
+    def resume_pipeline(self, svc, block_rev, idem):
+        def fn():
+            p = self.pipeline(svc)
+            if block_rev not in p["blocked"]:
+                p["blocked"].append(block_rev)
+            p["desired"] = self.deployment(svc)["current"]
+            p["auto_deploy"] = True
+            return {"service": svc, "auto_deploy": True, "blocked": list(p["blocked"]), "desired": p["desired"]}
+        return self.core.mutate("cloud.pipeline_resume", idem, fn)
+
 
 class InternalApp(Adapter):
     """Adapter 3: internal application (config, health, regression suite) + identity directory."""
@@ -185,6 +260,9 @@ class ProjectTracker(Adapter):
     """Adapter 4: project-management system (offboarding tickets, incident tickets)."""
     def tickets(self):
         return self.s["pm"]["tickets"]
+
+    def open_alerts(self):
+        return {tid: t for tid, t in self.tickets().items() if t.get("kind") == "alert" and t["status"] == "open"}
 
     def completed_offboardings(self):
         return {tid: t for tid, t in self.tickets().items()
@@ -333,6 +411,19 @@ class Sandbox:
             cfg[key] = value
             return {"dependent": dep, "restored_version": version, "config_fp": fp(value)}
         return self.mutate(f"{kind}.restore", idem, fn)
+
+    def callers_of(self, svc):
+        """Apps whose configuration points at a cloud service (found by scanning config)."""
+        return [f"app:{a}" for a, x in sorted(self.apps.apps().items())
+                if any(f"//{svc}." in str(v) for v in x["config"].values())]
+
+    def caller_healthy(self, dep, svc):
+        """A caller is healthy when the service it depends on is."""
+        return dep in self.callers_of(svc) and self.cloud.service_healthy(svc)
+
+    def synthetic_checkout(self, svc):
+        """End-to-end probe: place a test order through storefront -> checkout-api -> database."""
+        return self.cloud.service_healthy(svc) and f"cloud:{svc}" not in self.s["flags"].get("regression_fail", [])
 
     def ownerless_accounts(self):
         out = []

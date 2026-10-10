@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Graph from './components/Graph'
 import {
-  ACTION_LABEL, ApiError, IDENTITIES, INCIDENT_STATE, actionState, api, eventText, eventTone, time,
+  ACTION_LABEL, ApiError, IDENTITIES, INCIDENT_STATE, PLAYBOOK_COPY, actionState, api, eventText, eventTone, time,
 } from './lib'
 
 const Pill = ({ tone, children }: { tone: string; children: React.ReactNode }) =>
@@ -28,6 +28,22 @@ function liveState(actions: any[], graph: any): Record<string, string> {
     if (a.type === 'revoke_credential' && ok) (graph?.nodes || []).filter((n: any) => n.kind === 'repo').forEach((n: any) => { m[n.id] = 'leaked key is dead' })
     if (a.type === 'scrub_exposed_secret' && ok) m[`repo:${a.target}`] = 'key removed from file'
     if (a.type === 'update_dependent' && a.result?.rolled_back) m[a.target] = 'rolled back · healthy'
+    const svc = `cloud:${a.target}`
+    if (a.type === 'pause_pipeline' && ok) m[`pipeline:${a.target}`] = 'paused'
+    if (a.type === 'rollback_service') {
+      if (ok) {
+        m[svc] = 'healthy'
+        ;(graph?.nodes || []).filter((n: any) => n.kind === 'revision').forEach((n: any) => {
+          m[n.id] = n.status === 'known good' ? 'running · known good' : 'rolled off'
+        })
+        ;(graph?.nodes || []).forEach((n: any) => {
+          if (n.kind === 'caller') m[n.id] = 'healthy'
+          if (n.kind === 'alert') m[n.id] = 'cleared'
+          if (n.kind === 'host') m[n.id] = 'no longer used'
+        })
+      } else if (bad) m[svc] = 'still failing after rollback'
+    }
+    if (a.type === 'resume_pipeline' && ok) m[`pipeline:${a.target}`] = 'resumed, rev blocked'
   }
   return Object.fromEntries(Object.entries(m).filter(([, v]) => v))
 }
@@ -37,6 +53,12 @@ export default function Page() {
   const [me, setMe] = useState<any>(null)
   const [scenarios, setScenarios] = useState<any[]>([])
   const [scenario, setScenario] = useState('signature')
+  const [playbook, setPlaybook] = useState('offboarding')
+  const pickPlaybook = (k: string) => {
+    setPlaybook(k)
+    const first = scenarios.find((s) => s.playbook === k)
+    if (first) setScenario(first.name)
+  }
   const [list, setList] = useState<any[] | null>(null)
   const [id, setId] = useState<string | null>(null)
   const [d, setD] = useState<any>(null)
@@ -127,15 +149,24 @@ export default function Page() {
 
         <header className="hero" id="top">
           <div className="hero-copy">
-            <h1>Close credential incidents only when they are actually closed.</h1>
-            <p>Rook investigates a leaked key, fixes it in a safe order, recovers when a step fails and closes the incident only after independent checks pass.</p>
+            <h1>IT incidents, resolved and proven fixed.</h1>
+            <p>Rook is an operations agent for growing companies. It investigates across your systems, fixes in a safe order, recovers when a step fails, and closes an incident only after independent checks pass.</p>
             <div className="hero-form">
+              <span className="mono small">Incident type</span>
+              <div className="row playbooks" role="group" aria-label="Incident type">
+                {Object.entries(PLAYBOOK_COPY).map(([k, c]) => (
+                  <button key={k} className={`chip ${playbook === k ? 'sel' : ''}`} aria-pressed={playbook === k} onClick={() => pickPlaybook(k)}>
+                    <b>{k === 'outage' ? 'Service outage' : 'Access & offboarding'}</b>
+                    <span className="small">{c.pitch}</span>
+                  </button>
+                ))}
+              </div>
               <label htmlFor="scenario" className="mono small">Sandbox scenario</label>
               <div className="row">
                 <select id="scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>
-                  {scenarios.map((s) => <option key={s.name} value={s.name}>{s.name.replace(/_/g, ' ')}</option>)}
+                  {scenarios.filter((s) => s.playbook === playbook).map((s) => <option key={s.name} value={s.name}>{s.name.replace(/_/g, ' ')}</option>)}
                 </select>
-                <button className="btn-dark" disabled={busy || !isAnalyst} onClick={create}>Investigate offboarded contractor</button>
+                <button className="btn-dark" disabled={busy || !isAnalyst} onClick={create}>{PLAYBOOK_COPY[playbook]?.button}</button>
               </div>
               <p className="small muted">{scenarios.find((s) => s.name === scenario)?.description}</p>
               {me && !isAnalyst && <p className="small muted">{who.label} cannot start incidents.</p>}
@@ -145,7 +176,7 @@ export default function Page() {
         </header>
 
         <p className="strip mono" role="note">
-          <span>sandbox</span><span>synthetic keys</span><span>org {me?.org || '…'}</span><span>{me ? me.roles.join(' + ') : 'loading'}</span>
+          <span>sandbox</span><span>mock integrations</span><span>org {me?.org || '…'}</span><span>{me ? me.roles.join(' + ') : 'loading'}</span>
         </p>
 
         {err && (
@@ -168,7 +199,7 @@ export default function Page() {
                   <button className={`chip ${i.id === id ? 'sel' : ''}`} aria-pressed={i.id === id}
                     onClick={() => { setNotice(null); setId(i.id) }}>
                     <span className="mono small">{time(i.created_at)}</span>
-                    <b>{i.scenario.replace(/_/g, ' ')}</b>
+                    <b>{i.playbook === 'outage' ? 'outage' : 'offboarding'} · {i.scenario.replace(/_/g, ' ')}</b>
                     <Pill tone={st.tone}>{st.label}</Pill>
                   </button>
                 </li>
@@ -185,7 +216,7 @@ export default function Page() {
             <section className="section" id="incident">
               <div className="overview">
                 <div>
-                  <p className="mono small muted">{R.incident.id} · severity {R.incident.severity} · ticket {R.incident.ticket || 'none'}</p>
+                  <p className="mono small muted">{R.playbook?.name} · {R.incident.id} · severity {R.incident.severity} · ticket {R.incident.ticket || 'none'}</p>
                   <h2 className="h2">{R.incident.title}</h2>
                   <p className="lead">{R.summary}</p>
                   <div className="row">
@@ -209,7 +240,7 @@ export default function Page() {
                 <Stat dark={false} label="Actions verified" value={`${R.actions.filter((a: any) => a.status === 'verified').length}/${R.actions.length}`} />
                 <Stat dark label="Closure checks passing" value={`${R.conditions.filter((c: any) => c.result === true).length}/${R.conditions.length}`} />
                 <Stat dark label="Failed tool calls" value={R.metrics.failed_tool_calls} />
-                <Stat dark={false} label="Old key dead after" value={R.metrics.seconds_until_old_key_dead != null ? `${R.metrics.seconds_until_old_key_dead}s` : '—'} />
+                <Stat dark={false} label={R.metrics.contain_label} value={R.metrics.seconds_to_contain != null ? `${R.metrics.seconds_to_contain}s` : '—'} />
               </div>
             </section>
 
@@ -225,13 +256,13 @@ export default function Page() {
                       {!ready && <p className="small">Rook pauses here once the earlier steps are verified. An approver can confirm in advance; policy is re-checked just before it runs.</p>}
                       <ul className="facts">
                         <li><b>Why approval:</b> {a.policy.reason}</li>
-                        <li><b>Can it be undone?</b> No. The old key stops working everywhere, permanently.</li>
+                        <li><b>Can it be undone?</b> {a.undo}</li>
                         <li><b>Safety check:</b> runs only after steps {a.depends_on.map((x: string) => R.actions.findIndex((y: any) => y.id === x) + 1).join(', ')} are verified.</li>
                       </ul>
                     </div>
                     <div className="approval-actions">
                       {isApprover ? (<>
-                        <button className="btn-lime" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/approve`, {}), 'Approved. Rook is continuing.')}>Approve revocation</button>
+                        <button className="btn-lime" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/approve`, {}), 'Approved. Rook is continuing.')}>Approve: {ACTION_LABEL[a.type] || a.type}</button>
                         <button className="btn-ghost" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/reject`, { note: 'Rejected from dashboard' }), 'Rejected. The incident will be escalated.')}>Reject</button>
                       </>) : <p className="small">Waiting for someone with the approver role. Switch to “Priya” to approve.</p>}
                     </div>
@@ -242,7 +273,7 @@ export default function Page() {
 
             {/* Graph + findings */}
             <section className="section">
-              <SectionTitle label="Who and what is connected" text="Discovered by Rook, with each node updated as actions are verified." />
+              <SectionTitle label="What is connected" text="Discovered by Rook, with each node updated as actions are verified." />
               <div className="card"><Graph graph={R.incident.graph} live={liveState(R.actions, R.incident.graph)} /></div>
             </section>
 
@@ -272,6 +303,7 @@ export default function Page() {
                         <h3 className="h4"><mark>{ACTION_LABEL[a.type] || a.type}</mark></h3>
                         <Pill tone={s.tone}>{s.label}</Pill>
                         {a.risk === 'high' && <Pill tone="bad">irreversible</Pill>}
+                        {a.risk === 'medium' && <Pill tone="warn">production change</Pill>}
                       </div>
                       <p className="mono small target">{a.target}</p>
                       <p>{a.summary}</p>
@@ -368,8 +400,9 @@ export default function Page() {
             <section className="section">
               <div className="soft cta">
                 <div>
-                  <h2 className="h3">Try the signature scenario</h2>
-                  <p>billing-app’s config API fails once mid-fix. Watch Rook save a checkpoint, inspect what really happened, retry safely and still close with evidence.</p>
+                  <h2 className="h3">Try one of two incidents</h2>
+                  <p><b>Access &amp; offboarding:</b> a contractor left but their API key still runs two services. A config API fails once mid-fix; Rook checkpoints, inspects what really happened, retries safely and closes with evidence.</p>
+                  <p><b>Service outage:</b> checkout-api broke right after a deploy. Rook pauses the pipeline so it can’t redeploy the bad change, rolls back, confirms customers can check out, and turns the pipeline back on with the bad revision blocked.</p>
                 </div>
                 <Star big />
               </div>
@@ -377,7 +410,7 @@ export default function Page() {
           )}
         </div>
 
-        <footer className="footer mono small">Rook · built by Keywarden · sandboxed mock integrations, synthetic credentials only</footer>
+        <footer className="footer mono small">Rook · the operations agent that proves the fix · built by Keywarden · sandboxed mock integrations, synthetic credentials only</footer>
       </div>
     </div>
   )
