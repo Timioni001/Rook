@@ -40,8 +40,17 @@ SCENARIOS = {
     "outage_wrong_cause": ("Rolling back does not fix checkout-api: the deploy is not the cause", {},
                            {"outage_persists": ["checkout-api"]}),
     "outage_rollback_down": ("The cloud's rollback API keeps failing", {"cloud.rollback": ["transient"] * 20}, {}),
+    # leaked-secret playbook
+    "leak": ("reports-app's config API returns a 503 once while Rook moves it to the new key",
+             {"app.update_config": ["transient"]}, {}),
+    "leak_clean": ("A scanner finds a live key in an internal repo; no injected faults", {}, {}),
+    "leak_already_revoked": ("The scanner's finding is a key that was already revoked, so rotating it would be "
+                             "pointless churn", {}, {"leak_already_revoked": True}),
+    "leak_unattributed": ("The leaked key matches no credential Rook can attribute to an owner", {},
+                          {"leak_unattributed": True}),
 }
 SCENARIO_PLAYBOOK = {k: "outage" for k in SCENARIOS if k.startswith("outage")}
+SCENARIO_PLAYBOOK |= {k: "leak" for k in SCENARIOS if k.startswith("leak")}
 
 
 def playbook_of(scenario):
@@ -58,9 +67,14 @@ def seed() -> dict:
         "github": {
             "accounts": {"jdoe": {"status": "disabled", "owner": "ident-jdoe"},
                          "asmith": {"status": "active", "owner": "ident-asmith"}},
-            "repos": {"billing-api": {".env.test": f"PAYMENTS_KEY={OLD}", "README.md": "billing api"}},
+            "repos": {"billing-api": {".env.test": f"PAYMENTS_KEY={OLD}", "README.md": "billing api"},
+                       # internal repo: where the secrets scanner finds the reporting key (leak playbook)
+                       "analytics-jobs": {"config/settings.yml": f"warehouse_key: {REPORTS}\nschedule: nightly",
+                                          "README.md": "nightly analytics jobs"}},
             "audit_log": [{"event": "file_committed", "repo": "billing-api", "path": ".env.test",
-                           "actor": "jdoe", "at": "2026-06-02T11:04:00Z"}],
+                           "actor": "jdoe", "at": "2026-06-02T11:04:00Z"},
+                          {"event": "file_committed", "repo": "analytics-jobs", "path": "config/settings.yml",
+                           "actor": "asmith", "at": "2026-04-21T14:26:00Z"}],
         },
         "cloud": {
             "accounts": {"jdoe": {"status": "active", "owner": "ident-jdoe"},
@@ -85,7 +99,11 @@ def seed() -> dict:
                                     "subject": "ident-jdoe", "comments": []},
                         "OPS-131": {"title": "ALERT: checkout-api 5xx error rate above 30%", "status": "open",
                                     "kind": "alert", "subject": "cloud:checkout-api",
-                                    "opened_at": "2026-10-10T08:53:00Z", "comments": []}},
+                                    "opened_at": "2026-10-10T08:53:00Z", "comments": []},
+                        "SEC-240": {"title": "SCANNER: hardcoded credential in analytics-jobs", "status": "open",
+                                    "kind": "leak", "path": "analytics-jobs/config/settings.yml",
+                                    "scanner": "secret-scanner", "opened_at": "2026-10-10T07:15:00Z",
+                                    "comments": []}},
             "next_ticket": 200,
         },
         "vault": {"credentials": {
@@ -104,6 +122,17 @@ def seed() -> dict:
                  "storefront": {"config": {"CHECKOUT_URL": "https://checkout-api.internal"}}},
         "failures": {}, "flags": {}, "applied": {}, "calls": 0, "mutations": 0,
     }
+
+
+def _apply_seed_flags(s):
+    """Flags that describe the world Rook walks into, rather than a fault injected while it works."""
+    if s["flags"].get("leak_already_revoked"):
+        for v in s["vault"]["credentials"]["cred-reports"]["versions"]:
+            v["status"] = "revoked"
+    if s["flags"].get("leak_unattributed"):
+        # A key in the repo that belongs to no credential in the vault: Rook cannot attribute it.
+        s["github"]["repos"]["analytics-jobs"]["config/settings.yml"] = (
+            "warehouse_key: sk_test_SYNTH_unknown_v1\nschedule: nightly")
 
 
 class Adapter:
@@ -144,17 +173,25 @@ class SourceHost(AccountService):
         out = []
         for repo, files in self.s["github"]["repos"].items():
             for path, txt in files.items():
-                for token in txt.replace("=", " ").split():
+                for token in txt.replace("=", " ").replace(":", " ").split():
                     if token.startswith("sk_test_SYNTH") and fp(token) == f:
                         out.append(f"{repo}/{path}")
         return out
+
+    def secrets_in(self, path):
+        """Fingerprints of credentials hardcoded in one tracked file. Values never leave this method."""
+        repo, _, file = path.partition("/")
+        txt = self.s["github"]["repos"].get(repo, {}).get(file)
+        if txt is None:
+            return []
+        return [fp(t) for t in txt.replace("=", " ").replace(":", " ").split() if t.startswith("sk_test_SYNTH")]
 
     def scrub_secret(self, path, f, idem):
         """Replace the leaked value in a tracked file with a placeholder (history still holds it)."""
         def fn():
             repo, file = path.split("/", 1)
             txt = self.s["github"]["repos"][repo][file]
-            for token in txt.replace("=", " ").split():
+            for token in txt.replace("=", " ").replace(":", " ").split():
                 if token.startswith("sk_test_SYNTH") and fp(token) == f:
                     txt = txt.replace(token, "<removed by Rook: key rotated>")
             self.s["github"]["repos"][repo][file] = txt
@@ -264,6 +301,9 @@ class ProjectTracker(Adapter):
     def open_alerts(self):
         return {tid: t for tid, t in self.tickets().items() if t.get("kind") == "alert" and t["status"] == "open"}
 
+    def open_leak_alerts(self):
+        return {tid: t for tid, t in self.tickets().items() if t.get("kind") == "leak" and t["status"] == "open"}
+
     def completed_offboardings(self):
         return {tid: t for tid, t in self.tickets().items()
                 if t.get("subject") and t["status"] == "done" and t["title"].startswith("Offboard")}
@@ -367,6 +407,7 @@ class Sandbox:
             s["failures"] = failures
         if flags is not None:
             s["flags"] = flags
+        _apply_seed_flags(s)
         return s
 
     def account_service(self, name):

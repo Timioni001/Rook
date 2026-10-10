@@ -87,6 +87,14 @@ def _revision_blocked(sb, a):
     return ok, {"blocked_revisions": p["blocked"], "pipeline_desired": p["desired"]}
 
 
+def _leak_attributed(sb, a):
+    """Can this leaked fingerprint be tied to a credential with a known owner? Rook never acts on
+    access it cannot attribute, so this is a closure condition rather than a plan-time guess."""
+    cid = sb.vault.find_by_fp(a["fp"])
+    owner = sb.vault.owner(cid) if cid else None
+    return bool(cid and owner), {"credential": cid, "owner": owner}
+
+
 OBSERVERS = {
     "service_healthy": _service_healthy,
     "error_rate_below": _error_rate_ok,
@@ -103,6 +111,7 @@ OBSERVERS = {
     "dependent_healthy": _dependent_healthy,
     "regression_passes": _regression_passes,
     "no_dependents_on_old_key": _no_live_dependents_on_old,
+    "leak_attributed": _leak_attributed,
 }
 
 
@@ -190,6 +199,64 @@ def build_conditions(rel):
                 conds.append(Condition(
                     id=f"{dep}-regression", description=f"{dep} passes its regression tests",
                     expected="regression suite passes", method="regression_passes", args={"dependent": dep}))
+    return conds
+
+
+# Indicative control mapping for the evidence pack. Each closure check is an independently observed
+# fact, which is what an auditor samples for these controls. The mapping is a starting point to
+# confirm with your own auditor, not an assertion that an audit would pass.
+CONTROLS = {
+    "account_disabled": ("SOC 2 CC6.2", "ISO 27001 A.5.18", "Access is removed when it is no longer required"),
+    "old_credential_rejected": ("SOC 2 CC6.1", "ISO 27001 A.5.17", "Revoked authentication information is rejected"),
+    "replacement_works": ("SOC 2 CC6.1", "ISO 27001 A.5.17", "Replacement authentication information is in place"),
+    "no_dependents_on_old_key": ("SOC 2 CC6.1", "ISO 27001 A.5.17", "No system still authenticates with the old key"),
+    "secret_removed_from_repo": ("SOC 2 CC6.1", "ISO 27001 A.8.28", "Credentials are not held in source code"),
+    "leak_attributed": ("SOC 2 CC6.1", "ISO 27001 A.5.16", "Every credential has an identified owner"),
+    "dependent_uses_replacement": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "The change landed as intended"),
+    "dependent_healthy": ("SOC 2 CC7.2", "ISO 27001 A.8.16", "The system is monitored and healthy after the change"),
+    "regression_passes": ("SOC 2 CC8.1", "ISO 27001 A.8.29", "Testing confirms the change did not break function"),
+    "service_healthy": ("SOC 2 CC7.2", "ISO 27001 A.8.16", "The system is monitored and healthy after the change"),
+    "error_rate_below": ("SOC 2 CC7.2", "ISO 27001 A.8.16", "Error rates are within normal bounds"),
+    "caller_healthy": ("SOC 2 CC7.2", "ISO 27001 A.8.16", "Dependent systems recovered"),
+    "synthetic_checkout_passes": ("SOC 2 CC7.2", "ISO 27001 A.8.16", "The business transaction works end to end"),
+    "running_known_good": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "The system runs an approved, known-good version"),
+    "bad_revision_blocked": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "The faulty change cannot be redeployed"),
+    "pipeline_resumed": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "Change control is operating again, not left frozen"),
+    "pipeline_paused": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "Automated deployment is held during the change"),
+}
+
+
+def control_for(method):
+    return CONTROLS.get(method, ("--", "--", "Operational verification"))
+
+
+def leak_conditions(rel):
+    """Closure for a scanner finding: the key is attributed, it is dead, and the file is clean.
+
+    Reuses the credential checks when the key is still live and has to be rotated; when it was already
+    revoked there is nothing to rotate, and closure is just "prove it is dead and clean up the file".
+    """
+    conds = build_conditions(rel)
+    methods = {c.method for c in conds}
+    ids = {c.id for c in conds}
+    for r in (x for x in rel if x["rel"] == "leak"):
+        head = [Condition(
+            id="leak-attributed",
+            description=f"The leaked key {r['fp']} belongs to a credential with a known owner",
+            expected="the vault holds a credential with this fingerprint, and it has an owner",
+            method="leak_attributed", args={"fp": r["fp"]})]
+        if "old_credential_rejected" not in methods:
+            head.append(Condition(
+                id="leak-key-dead", description=f"The leaked key {r['fp']} is rejected when used",
+                expected="authentication with the leaked key fails",
+                method="old_credential_rejected", args={"fp": r["fp"]}))
+        if f"repo:{r['path']}-scrubbed" not in ids:
+            head.append(Condition(
+                id=f"repo:{r['path']}-scrubbed",
+                description=f"The leaked key is removed from {r['path']}",
+                expected="file no longer contains the leaked key",
+                method="secret_removed_from_repo", args={"path": r["path"], "fp": r["fp"]}))
+        conds = head + conds
     return conds
 
 

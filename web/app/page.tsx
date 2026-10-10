@@ -6,6 +6,12 @@ import {
   reachable, time,
 } from './lib'
 
+const PLAYBOOK_NAME: Record<string, string> = {
+  offboarding: 'Access & offboarding',
+  outage: 'Service outage',
+  leak: 'Leaked credential',
+}
+
 const Pill = ({ tone, children }: { tone: string; children: React.ReactNode }) =>
   <span className={`pill tone-${tone}`}>{children}</span>
 
@@ -164,6 +170,7 @@ export default function Page() {
             <a href="#incident">Incident</a>
             <a href="#plan">Plan</a>
             <a href="#verify">Verification</a>
+            <a href="#refusals">Limits</a>
             <a href="#timeline">Timeline</a>
           </div>
           <label className="who">
@@ -191,7 +198,7 @@ export default function Page() {
               <div className="row playbooks" role="group" aria-label="Incident type">
                 {Object.entries(PLAYBOOK_COPY).map(([k, c]) => (
                   <button key={k} className={`chip ${playbook === k ? 'sel' : ''}`} aria-pressed={playbook === k} onClick={() => pickPlaybook(k)}>
-                    <b>{k === 'outage' ? 'Service outage' : 'Access & offboarding'}</b>
+                    <b>{PLAYBOOK_NAME[k] || k}</b>
                     <span className="small">{c.pitch}</span>
                   </button>
                 ))}
@@ -241,7 +248,7 @@ export default function Page() {
                   <button className={`chip ${i.id === id ? 'sel' : ''}`} aria-pressed={i.id === id}
                     onClick={() => { setNotice(null); setId(i.id) }}>
                     <span className="mono small">{time(i.created_at)}</span>
-                    <b>{i.playbook === 'outage' ? 'outage' : 'offboarding'} · {i.scenario.replace(/_/g, ' ')}</b>
+                    <b>{i.playbook} · {i.scenario.replace(/_/g, ' ')}</b>
                     <Pill tone={st.tone}>{st.label}</Pill>
                   </button>
                 </li>
@@ -331,6 +338,24 @@ export default function Page() {
               </ul>
             </section>
 
+            {/* What Rook refused to do */}
+            {R.refusals?.length > 0 && (
+              <section className="section" id="refusals">
+                <SectionTitle label="What Rook refused to do"
+                  text="Deliberate limits, not gaps. An agent that acts on what it cannot explain is the dangerous kind." />
+                <ul className="findings">
+                  {R.refusals.map((r: any, i: number) => (
+                    <li key={i} className="card finding">
+                      <Pill tone={r.kind === 'blocked' ? 'bad' : r.kind === 'waiting' ? 'warn' : 'mute'}>
+                        {r.kind === 'blocked' ? 'blocked' : r.kind === 'waiting' ? 'needs a person' : 'declined'}
+                      </Pill>
+                      <span><b>{r.what}.</b> {r.why}{r.rule ? <span className="small dim"> · policy {r.rule}</span> : null}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {/* Plan */}
             <section className="section" id="plan">
               <SectionTitle label="Plan" text="Steps run in this order. Each one is checked against live state before the next can start." />
@@ -409,6 +434,13 @@ export default function Page() {
                 <div>
                   <p className="lead">{R.summary}</p>
                   {R.closure_blocked_reason && <p className="small"><b>Why it is not closed:</b> {R.closure_blocked_reason}</p>}
+                  <p className="small">
+                    <b>What this replaced:</b> {R.metrics.manual_steps_replaced} steps a person would have carried out
+                    or checked by hand across {R.metrics.systems_touched} system{R.metrics.systems_touched === 1 ? '' : 's'},
+                    including {R.metrics.independent_checks} independent verification{R.metrics.independent_checks === 1 ? '' : 's'}
+                    {R.metrics.human_decisions > 0 && <> · {R.metrics.human_decisions} decision{R.metrics.human_decisions === 1 ? '' : 's'} escalated to a person</>}
+                    {R.metrics.refusals > 0 && <> · {R.metrics.refusals} action{R.metrics.refusals === 1 ? '' : 's'} refused</>}
+                  </p>
                   {R.approvals.length > 0 && <p className="small">Approvals: {R.approvals.map((a: any) => `${a.decision} by ${a.by} at ${time(a.ts)}`).join('; ')}</p>}
                   {R.follow_ups.length > 0 && (<>
                     <h3 className="h4" style={{ marginTop: 16 }}><mark>Left for a person</mark></h3>
@@ -445,6 +477,7 @@ export default function Page() {
                   <h2 className="h3">Try one of two incidents</h2>
                   <p><b>Access &amp; offboarding:</b> a contractor left but their API key still runs two services. A config API fails once mid-fix; Rook checkpoints, inspects what really happened, retries safely and closes with evidence.</p>
                   <p><b>Service outage:</b> checkout-api broke right after a deploy. Rook pauses the pipeline so it can’t redeploy the bad change, rolls back, confirms customers can check out, and turns the pipeline back on with the bad revision blocked.</p>
+                  <p><b>Leaked credential:</b> a scanner finds a live API key committed to an internal repo. Rook proves it still works, finds the two services using it, rotates and verifies each one, revokes the old key and cleans the file. If the key is already dead it refuses to rotate it, and if it cannot tell who owns it, it refuses to touch it at all.</p>
                 </div>
                 <Star big />
               </div>

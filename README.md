@@ -2,6 +2,8 @@
 
 **The operations agent that proves the fix.**
 
+Most incident agents stop at a recommendation. They stop there for a stated reason: nobody can prove the fix worked, so acting is too risky. Rook closes that loop. It acts, then proves the result against the live systems, and closes an incident only when the evidence holds.
+
 Rook is B2B software for growing companies. It automates the operational incidents that today need IT, security or operations people to investigate, then coordinate fixes across several systems. Rook investigates, acts in a safe order, recovers when a step fails, and checks the result independently. It closes an incident only when evidence shows every closure condition holds. We call this **Verified Closure**. Rook is built by the Keywarden team.
 
 > Every integration in this repository is a **sandboxed mock** with synthetic credentials (`sk_test_SYNTH_*`). This is a hackathon build for neatHack 2026 and is not production-ready.
@@ -10,7 +12,7 @@ Rook is B2B software for growing companies. It automates the operational inciden
 
 | Customer | Typical incidents | Rook today |
 |---|---|---|
-| Startups and SMEs | Employee and contractor offboarding, access management, routine IT incidents | **Access & offboarding** playbook |
+| Startups and SMEs | Employee and contractor offboarding, access management, routine IT incidents | **Access & offboarding** and **Leaked credential** playbooks |
 | Mid-sized companies | Cloud outages, service recovery, compliance checks | **Service outage** playbook |
 | Larger enterprises | Complex incident response across many connected systems | Same engine; more playbooks and real connectors |
 
@@ -24,6 +26,7 @@ The engine is the same for every incident: investigate, define closure, plan, au
 |---|---|---|---|
 | **Access & offboarding** | A completed offboarding ticket | Disables leftover accounts, issues a replacement key, moves every service onto it, revokes the old key (with approval), and removes the leaked key from code | 13 |
 | **Service outage** | A monitoring alert | Ties the alert to the deploy that caused it, pauses auto-deploy, rolls back to a known-good revision, checks that customers can check out, then resumes the pipeline with the bad revision blocked | 7 |
+| **Leaked credential** | A secrets-scanner finding | Probes whether the leaked key still works, attributes it to an owner, finds every service using it, rotates and verifies each one, revokes the old key and clears the file | 3 to 11 |
 
 ## Old problems, and how Rook handles each
 
@@ -43,7 +46,10 @@ The engine is the same for every incident: investigate, define closure, plan, au
 | The leaked key stays in the repo and scanners keep firing | After revocation, Rook replaces the dead key in the file and flags the git history as a follow-up | `scrub_exposed_secret` |
 | Orphaned accounts nobody owns | Rook flags them for a person and never acts on access it can't attribute | `follow_ups` |
 | Risky actions without sign-off | Irreversible or unproven steps need an approver from the same org, and policy is re-checked just before execution | `policy.py` |
-| Audit evidence is scattered and editable | Rook keeps an append-only, hash-chained audit log. A broken chain blocks closure. There's a one-click Markdown evidence pack | `store.verify_chain`, `/evidence` |
+| A scanner finds a leaked key and the key is still alive months later | Rook probes the key, attributes it to an owner, finds every live user by fingerprint, rotates in a safe order and proves the old key is rejected | `playbooks.investigate_leak` |
+| Rotating a key that was already revoked, for the sake of closing a ticket | Rook checks whether the key still works first. If it is already dead it refuses to rotate, cleans the file and says why | `LeakedSecret.plan`, `declines` |
+| An agent acts on something it cannot explain | Everything Rook declined is reported next to what it did, with the policy rule. It never touches a credential it cannot attribute to an owner | `report.refusals`, policy R2 |
+| Audit evidence is scattered and editable | Rook keeps an append-only, hash-chained audit log. A broken chain blocks closure. The evidence pack maps every closure check to an indicative SOC 2 and ISO 27001 control | `store.verify_chain`, `verification.CONTROLS`, `/evidence` |
 | No incident metrics | Rook records time to contain (old key dead, or service restored), time to close, retries, rollbacks and checkpoints | `report.metrics` |
 
 ## Playbook 1: access & offboarding
@@ -86,6 +92,8 @@ pip install -r requirements.txt
 python -m rook.demo                            # offboarding: a 503 mid-remediation, then recovery
 python -m rook.demo --scenario outage          # outage: bad deploy, ambiguous rollback, recovery
 python -m rook.demo --scenario persistent      # Rook escalates instead of claiming success
+python -m rook.demo --scenario leak            # leaked key: rotate, verify, revoke, clean the file
+python -m rook.demo --scenario leak_unattributed   # Rook refuses to touch a key it cannot attribute
 
 # 2. API + dashboard
 uvicorn rook.api:create_app --factory --port 8000
@@ -115,7 +123,7 @@ docker build -t rook . && docker run --rm -p 8000:8000 rook   # http://localhost
 ### Tests and checks
 
 ```bash
-python -m pytest -q                      # 80 tests
+python -m pytest -q                      # 95 tests
 cd web && npm ci && npx tsc --noEmit && npm run build:static
 bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 ```
@@ -124,6 +132,7 @@ bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 
 Access & offboarding: `signature`, `clean`, `ambiguous_applied`, `ambiguous_lost`, `persistent`, `permission_denied`, `revoke_noop` (the vault says the key is revoked but it still works), `replacement_invalid`, `faulty_update`, `regression_fail`.
 Service outage: `outage` (the rollback times out but did land), `outage_clean`, `outage_wrong_cause` (the rollback doesn't fix it), `outage_rollback_down`.
+Leaked credential: `leak` (a config API fails once mid-rotation), `leak_clean`, `leak_already_revoked` (the key is already dead, so Rook refuses to rotate it), `leak_unattributed` (the key matches no credential, so Rook refuses to touch it).
 They are listed in `rook/sandbox.py:SCENARIOS`. Failures are injected deterministically per operation.
 
 ## Architecture
@@ -134,7 +143,7 @@ web/ (Next.js)  ──/api proxy──▶  rook/api.py (FastAPI, bearer auth, or
                                      ▼
                           rook/engine.py  Rook: investigate → conditions → plan → policy
                           │      │        → execute → reconcile → verify → close/escalate
-                          │   rook/playbooks.py  offboarding, service outage (trigger, investigate, plan, checks)
+                          │   rook/playbooks.py  offboarding, service outage, leaked credential
              rook/policy.py  rook/verification.py (independent observers)
                           │
                 rook/sandbox.py  five stateful mock adapters, idempotency, failure injection
@@ -167,4 +176,5 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 - Demo bearer tokens are built in for local use. Set `KEYWARDEN_TOKENS` (JSON) and `KEYWARDEN_DEMO_TOKENS=0` anywhere shared.
 - There is a single shared sandbox, so only one incident runs at a time.
 - The optional model planner (`ROOK_PLANNER=llm`) covers the offboarding playbook and only proposes actions. Ordering, policy and verification stay deterministic.
-- Two playbooks so far. Each new incident type is a new playbook plus the adapter operations it needs.
+- Three playbooks so far. Each new incident type is a new playbook plus the adapter operations it needs.
+- The SOC 2 and ISO 27001 control mapping in the evidence pack is indicative. It is a starting point to confirm with an auditor, not a claim that an audit would pass.

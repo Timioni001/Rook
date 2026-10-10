@@ -6,10 +6,12 @@ investigate it, the remediation it plans, and the closure checks that must hold 
 
 - offboarding: someone left, but their access and keys live on (access management)
 - outage: a production service is failing after a change (cloud / IT incident)
+- leak: a secrets scanner found a credential hardcoded in a repository (non-human identity)
 """
+import datetime
 from .domain import Action
 from .sandbox import playbook_of
-from .verification import build_conditions, outage_conditions
+from .verification import build_conditions, leak_conditions, outage_conditions
 
 
 # ================================================================ playbook: access & offboarding
@@ -191,6 +193,13 @@ class Offboarding:
                 out.append(f"{a.target} was rolled back to the previous key after its update failed. Fix the service, "
                            "then run the incident again.")
         return out
+
+    def declines(self, inc, acts):
+        """Things Rook deliberately did not do, and why. Never acts on access it cannot attribute."""
+        return [{"what": f"Touch the {r['service']} account '{r['user']}'",
+                 "why": "No directory owns this account, so Rook cannot tell whose access it is.",
+                 "rule": "R2-ownership"}
+                for r in inc.relationships if r["rel"] == "ownerless_account"]
 
     def impact(self, sb, inc):
         """Services that relied on the leaked key when the incident began, and are down right now."""
@@ -387,6 +396,20 @@ class Outage:
             out.append("Rook found no known-good revision to roll back to, so a person needs to take this incident.")
         return out
 
+    def declines(self, inc, acts):
+        out = []
+        g = {r["rel"]: r for r in inc.relationships}
+        if not acts and g.get("service_state") and not g["service_state"]["healthy"]:
+            out.append({"what": "Roll the service back automatically",
+                        "why": "There is no revision with a healthy track record to roll back to.",
+                        "rule": "R8-known-good"})
+        if any(a.type == "pause_pipeline" and a.status.value == "verified" for a in acts) and \
+                not any(a.type == "resume_pipeline" and a.status.value == "verified" for a in acts):
+            out.append({"what": "Leave the deploy pipeline running",
+                        "why": "The pipeline is paused on purpose until the service is healthy again.",
+                        "rule": "R4-safe-order"})
+        return out
+
     def impact(self, sb, inc):
         st = next(r for r in inc.relationships if r["rel"] == "service_state")
         svc = st["service"]
@@ -394,7 +417,228 @@ class Outage:
             [c for c in sb.callers_of(svc) if not sb.caller_healthy(c, svc)]
 
 
-PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage())}
+
+
+# ================================================================ playbook: leaked secret
+
+def _days_since(iso):
+    try:
+        then = datetime.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    return max(0, (datetime.datetime.now(datetime.timezone.utc) - then).days)
+
+
+def leak_alert(sb):
+    return next(iter(sb.pm.open_leak_alerts().items()), (None, None))
+
+
+def leak_subject(sb):
+    """Attribute the finding before the incident opens: the subject is whoever owns the key.
+
+    Policy scopes every action to the incident's subject, so an unattributable finding gets the
+    path as its subject instead, which no credential action can ever match.
+    """
+    tid, alert = leak_alert(sb)
+    if alert is None:
+        return None
+    fps = sb.github.secrets_in(alert["path"])
+    cid = sb.vault.find_by_fp(fps[0]) if fps else None
+    return (sb.vault.owner(cid) if cid else None) or f"leak:{alert['path']}"
+
+
+def investigate_leak(sb, subject):
+    """Read the scanner finding, probe whether the key still works, and find everything using it."""
+    tid, alert = leak_alert(sb)
+    path = alert["path"]
+    fps = sb.github.secrets_in(path)
+    f = fps[0] if fps else None
+    history = sb.github.commit_history(path)
+    first = history[0] if history else {}
+    cid = sb.vault.find_by_fp(f) if f else None
+    rel = [{"rel": "leak", "alert": tid, "scanner": alert.get("scanner", "scanner"), "path": path,
+            "repo": path.split("/", 1)[0], "fp": f, "credential": cid,
+            "still_valid": sb.vault.authenticate_fp(f) if f else False,
+            "exposed_by": first.get("actor"), "exposed_at": first.get("at"),
+            "days_exposed": _days_since(first.get("at")),
+            "live_users": sb.dependents_of_fp(f) if f else []}]
+    info = {"name": path, "alert": tid}
+    if cid:
+        m = sb.vault.meta(cid)
+        active = [v for v in m["versions"] if v["status"] == "active"]
+        cur = active[-1] if active else m["versions"][-1]
+        deps = sb.dependents_of_fp(cur["fp"])
+        rel.append({"rel": "owns_credential", "cred": cid,
+                    "status": "active" if active else "inactive", "version": cur["v"], "fp": cur["fp"],
+                    "purpose": m["purpose"], "created_by": m["created_by"], "created_at": m["created_at"],
+                    "dependents": deps, "recorded_used_by": m["used_by"],
+                    "unrecorded_dependents": [d for d in deps if d not in m["used_by"]],
+                    "exposed_in": sb.github.find_secret(cur["fp"]),
+                    "exposure_history": [h for pth in sb.github.find_secret(cur["fp"])
+                                         for h in sb.github.commit_history(pth)]})
+        info["name"] = m["purpose"]
+    return info, rel, leak_graph(rel), leak_findings(rel)
+
+
+def leak_graph(rel):
+    g = {r["rel"]: r for r in rel}
+    lk = g["leak"]
+    # "not valid" only means "already dead" once the key is attributed; an unknown key's state is unknown.
+    attributed = any(r["rel"] == "owns_credential" for r in rel)
+    status = ("live key leaked" if lk["still_valid"] else
+              "key already dead" if attributed else "unidentified key")
+    nodes = [{"id": f"repo:{lk['path']}", "kind": "repo", "label": lk["path"], "status": status,
+              "detail": f"exposed {lk['days_exposed']} days" if lk["days_exposed"] is not None else ""}]
+    edges = []
+    cred = g.get("owns_credential")
+    if cred:
+        nodes.append({"id": cred["cred"], "kind": "credential",
+                      "label": f"{cred['cred']} ({cred['fp']})", "status": cred["status"],
+                      "detail": cred["purpose"]})
+        edges.append({"from": cred["cred"], "to": f"repo:{lk['path']}", "rel": "committed to"})
+        for d in cred["dependents"]:
+            nodes.append({"id": d, "kind": "dependent", "label": d, "status": "uses leaked key",
+                          "detail": "not in vault metadata" if d in cred["unrecorded_dependents"] else ""})
+            edges.append({"from": d, "to": cred["cred"], "rel": "authenticates with"})
+    else:
+        nodes.append({"id": "unattributed", "kind": "credential", "label": lk["fp"] or "unreadable",
+                      "status": "no owner", "detail": "matches no credential in the vault"})
+        edges.append({"from": "unattributed", "to": f"repo:{lk['path']}", "rel": "found in"})
+    return {"nodes": nodes, "edges": edges}
+
+
+def leak_findings(rel):
+    g = {r["rel"]: r for r in rel}
+    lk, cred = g["leak"], g.get("owns_credential")
+    out = [{"severity": "info",
+            "text": f"{lk['scanner']} flagged a hardcoded credential in {lk['path']}"
+                    + (f", committed by {lk['exposed_by']} on {lk['exposed_at'][:10]}" if lk.get("exposed_at") else "")
+                    + (f" and exposed for {lk['days_exposed']} days." if lk["days_exposed"] is not None else "."),
+            "evidence": {"alert": lk["alert"], "path": lk["path"], "fp": lk["fp"]}}]
+    if cred is None:
+        out.append({"severity": "high",
+                    "text": "The key matches no credential in the vault, so Rook cannot tell who owns it or what "
+                            "would break if it were revoked. It will not touch an unattributable credential; a "
+                            "person has to identify it.",
+                    "evidence": {"fp": lk["fp"]}})
+        return out
+    if lk["still_valid"]:
+        out.append({"severity": "high",
+                    "text": f"The leaked key is still live: a request signed with {lk['fp']} is accepted right now. "
+                            "Finding it is not the same as closing it.",
+                    "evidence": {"fp": lk["fp"], "credential": cred["cred"]}})
+    else:
+        out.append({"severity": "info",
+                    "text": f"The leaked key {lk['fp']} is already revoked, so rotating it again would be churn. "
+                            "The file still has to be cleaned up and the key proven dead.",
+                    "evidence": {"fp": lk["fp"], "credential": cred["cred"]}})
+    if cred["dependents"]:
+        out.append({"severity": "high" if lk["still_valid"] else "medium",
+                    "text": f"{cred['purpose']} {cred['cred']} is in live use by {', '.join(cred['dependents'])}, "
+                            "so revoking it before each one moves to a replacement would take them down.",
+                    "evidence": {"dependents": cred["dependents"]}})
+    if cred["unrecorded_dependents"]:
+        out.append({"severity": "medium",
+                    "text": f"{', '.join(cred['unrecorded_dependents'])} uses the key but is missing from the "
+                            "vault's metadata; found by scanning live configuration.",
+                    "evidence": {"recorded_used_by": cred["recorded_used_by"]}})
+    for pth in cred["exposed_in"]:
+        if pth != lk["path"]:
+            out.append({"severity": "medium",
+                        "text": f"The same key is also committed in {pth}, which the scanner did not report.",
+                        "evidence": {"path": pth}})
+    return out
+
+
+class LeakedSecret:
+    key = "leak"
+    name = "Leaked credential"
+    trigger = "A secrets-scanner finding"
+    contain_type, contain_label = "revoke_credential", "Leaked key dead after"
+
+    def find_subject(self, sb):
+        return leak_subject(sb)
+
+    def investigate(self, sb, subject):
+        return investigate_leak(sb, subject)
+
+    def title(self, info, subject):
+        return f"Leaked credential in a repository: {info.get('name', subject)}"
+
+    def discovery(self, rel):
+        g = {r["rel"]: r for r in rel}
+        lk, cred = g["leak"], g.get("owns_credential")
+        deps = cred["dependents"] if cred else []
+        return (f"config scan for {lk['fp']}", deps,
+                {"dependents": len(deps), "still_valid": lk["still_valid"],
+                 "attributed": cred is not None,
+                 "unrecorded": len(cred["unrecorded_dependents"]) if cred else 0})
+
+    def plan(self, rel, iid):
+        acts = RuleBasedPlanner().plan(rel, iid)
+        if acts:
+            return acts
+        # Nothing to rotate. If the key is dead but still sitting in the file, clean it up; if it
+        # cannot be attributed, plan nothing at all and let closure escalate.
+        g = {r["rel"]: r for r in rel}
+        lk, cred = g["leak"], g.get("owns_credential")
+        if cred and not lk["still_valid"]:
+            acts.append(make_action(iid, 1, "scrub_exposed_secret", lk["path"],
+                                    {"service": "github", "cred_id": cred["cred"], "old_fp": lk["fp"]},
+                                    summary=f"Remove the already-revoked key from {lk['path']} so scanners stop "
+                                            "flagging a key that can no longer be used."))
+        return acts
+
+    def conditions(self, rel):
+        return leak_conditions(rel)
+
+    def closed_summary(self, n):
+        return (f"Closed with evidence: all {n} actions were independently verified. The leaked key is rejected "
+                "when used, every service that depended on it runs on a replacement and is healthy, and the key "
+                "is gone from the file the scanner flagged.")
+
+    def follow_ups(self, inc, acts):
+        out = []
+        g = {r["rel"]: r for r in inc.relationships}
+        lk, cred = g["leak"], g.get("owns_credential")
+        if cred is None:
+            out.append(f"Identify the owner of the key in {lk['path']}. Rook will not revoke a credential it "
+                       "cannot attribute, because it cannot tell what would break.")
+            return out
+        if any(a.type == "scrub_exposed_secret" and a.status.value == "verified" for a in acts):
+            out.append(f"Git history of {lk['path']} still contains the leaked key. It no longer works; rewrite "
+                       "history only if policy requires it.")
+        if lk.get("days_exposed"):
+            out.append(f"The key sat in {lk['repo']} for {lk['days_exposed']} days before anyone acted. Consider "
+                       "pre-commit secret scanning so the next one is caught at commit time.")
+        for a in acts:
+            if a.result.get("rolled_back"):
+                out.append(f"{a.target} was rolled back to the previous key after its update failed. Fix the "
+                           "service, then run the incident again.")
+        return out
+
+    def declines(self, inc, acts):
+        g = {r["rel"]: r for r in inc.relationships}
+        lk, cred = g["leak"], g.get("owns_credential")
+        if cred is None:
+            return [{"what": f"Revoke or remove the key found in {lk['path']}",
+                     "why": "It matches no credential in the vault, so Rook cannot tell who owns it or what "
+                            "would stop working. It will not guess.",
+                     "rule": "R2-ownership"}]
+        if not lk["still_valid"]:
+            return [{"what": f"Rotate {cred['cred']}",
+                     "why": "The leaked key is already revoked, so issuing a replacement would be churn with a "
+                            "production risk and no benefit.",
+                     "rule": "R0-default"}]
+        return []
+
+    def impact(self, sb, inc):
+        g = {r["rel"]: r for r in inc.relationships}
+        cred = g.get("owns_credential")
+        return [d for d in (cred["dependents"] if cred else []) if not sb.health(d)]
+
+
+PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage(), LeakedSecret())}
 
 
 def playbook_for(scenario=None, key=None):

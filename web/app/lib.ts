@@ -85,6 +85,7 @@ export const ACTION_LABEL: Record<string, string> = {
 export const PLAYBOOK_COPY: Record<string, { button: string; pitch: string }> = {
   offboarding: { button: 'Investigate offboarding', pitch: 'Someone left, but their accounts and API keys live on.' },
   outage: { button: 'Investigate checkout-api alert', pitch: 'A production service started failing right after a deploy.' },
+  leak: { button: 'Investigate scanner finding', pitch: 'A scanner found a live API key hardcoded in a repository.' },
 }
 
 const EVENT_TEXT: Record<string, (d: any) => string> = {

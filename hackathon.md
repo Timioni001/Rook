@@ -50,6 +50,14 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 - `scripts/deploy-pages.sh` creates the Pages project, compiles the agent's address into a staged copy of the `/api` proxy and uploads it. No build command, no root directory, no environment variables. The committed proxy keeps its empty default, so nothing in git changes.
 - Fixed a proxy bug this surfaced: the agent's responses are compressed, and forwarding the client's `accept-encoding` left the body and the `content-encoding` header disagreeing, so the page arrived as noise. The proxy now negotiates compression itself and drops the framing headers the runtime has already consumed. Verified in a browser: the staged bundle, served by the real Workers runtime against the live Render agent, runs an outage incident to Verified Closure with no console errors.
 
+**22:40: third playbook and the limits made visible.** Market reading first: the agents shipping in 2026 (AWS DevOps Agent, Azure SRE Agent, both GA in March) deliberately stop at investigation and recommendation, and Cleric is read-only "until the feedback loop is reliable enough". The whole category stops where Rook starts. GitGuardian's 2026 report counts 28.65M new hardcoded secrets in public commits in 2025, and says 64% of secrets leaked in 2022 were still valid in early 2026 -- detection without closure.
+
+- New **leaked credential** playbook: a secrets-scanner finding, attributed to an owner before anything is touched, with the key probed for whether it still works. Four scenarios, two of which are about judgement rather than action. `leak_already_revoked`: the key is already dead, so Rook refuses to rotate it, cleans the file and proves the key is rejected. `leak_unattributed`: the key matches no credential, so Rook refuses to touch it and escalates. It reuses the existing planner and closure machinery, which is the point of the playbook split.
+- **Refusals** are now first class. Every blocked action, pending approval and deliberate decline is reported with its policy rule and shown in the dashboard under "What Rook refused to do".
+- **Impact metrics** on each incident: systems acted on, steps a person would otherwise have done by hand, independent verifications, decisions escalated, actions refused. Counts of real work, not invented minutes saved.
+- The **evidence pack** maps every closure check to an indicative SOC 2 and ISO 27001 control, labelled as a starting point for an auditor rather than a claim that an audit would pass.
+- 95 tests. Verified in a browser through the Cloudflare proxy: the refusal path escalates and renders, and the already-revoked path closes verified after a single action.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

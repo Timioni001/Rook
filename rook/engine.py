@@ -11,7 +11,7 @@ import json, os, time, uuid
 from .domain import Action, Condition, Incident, IncidentStatus as IS, Status, fp
 from .sandbox import Transient, Permanent, Timeout
 from . import policy
-from .verification import applied, evaluate, verify_action
+from .verification import applied, control_for, evaluate, verify_action
 from .obs import log, span
 from .playbooks import (PLAYBOOKS, RuleBasedPlanner, build_graph, findings, investigate,  # noqa: F401
                         make_action, playbook_for)
@@ -520,6 +520,12 @@ class Engine:
         calls = self.store.tool_calls(iid)
         by_id = {a.id: a for a in acts}
         pb = playbook_for(key=inc.playbook)
+        refusals = [{"what": a.summary or f"{a.type} on {a.target}",
+                     "why": a.policy.get("reason", "Policy did not allow it."),
+                     "rule": a.policy.get("rule", ""),
+                     "kind": "blocked" if a.status == S.blocked else "waiting"}
+                    for a in acts if a.status in (S.blocked, S.needs_approval)]
+        refusals += [dict(d, kind="declined") for d in pb.declines(inc, acts)]
         dead_at = next((e["ts"] for e in events if e["event"] in ("verification_verified", "reconciled_verified")
                         and by_id.get(e["data"].get("action")) is not None
                         and by_id[e["data"]["action"]].type == pb.contain_type), None)
@@ -549,6 +555,7 @@ class Engine:
                          "evidence": a.evidence} for a in acts],
             "approvals": self.store.approvals(iid),
             "follow_ups": pb.follow_ups(inc, acts),
+            "refusals": refusals,
             "tool_calls": calls,
             "unresolved": unresolved,
             "closure_blocked_reason": None if closed else blocked_reason(inv, bad, unresolved),
@@ -558,6 +565,11 @@ class Engine:
                         "checkpoints": len(self.store.checkpoints(iid)),
                         "audit_events": len(events),
                         "rollbacks": sum(1 for a in acts if a.result.get("rolled_back")),
+                        "systems_touched": len({a.params.get("service") for a in acts if a.params.get("service")}),
+                        "manual_steps_replaced": len(acts) + len(conds),
+                        "independent_checks": len(conds),
+                        "human_decisions": len([a for a in acts if a.policy.get("rule") in ("R5-approval", "R8-known-good")]),
+                        "refusals": len(refusals),
                         "contain_label": pb.contain_label,
                         "seconds_to_contain": round(dead_at - inc.created_at, 1) if dead_at else None,
                         "seconds_until_old_key_dead": (round(dead_at - inc.created_at, 1)
@@ -602,16 +614,45 @@ def evidence_pack(rep, audit, chain):
          f"- Incident type: {rep['playbook']['name']}",
          f"- {rep['metrics']['contain_label']}: {rep['metrics']['seconds_to_contain']} s",
          f"- Closed after: {rep['metrics']['seconds_until_closed']} s", "",
-         "## Summary", rep["summary"], "", "## Findings"]
+         "## Summary", rep["summary"], "",
+         "## What this replaced",
+         f"- Systems acted on: {rep['metrics']['systems_touched']}",
+         f"- Steps a person would otherwise have carried out or checked by hand: "
+         f"{rep['metrics']['manual_steps_replaced']}",
+         f"- Independent verifications: {rep['metrics']['independent_checks']}",
+         f"- Decisions escalated to a person: {rep['metrics']['human_decisions']}",
+         f"- Actions Rook refused to take: {rep['metrics']['refusals']}", "",
+         "## Findings"]
     L += [f"- [{f['severity']}] {f['text']}" for f in inc["findings"]]
     L += ["", "## Actions", "| # | Action | Target | Status | Attempts | Policy | Reversible |", "|---|---|---|---|---|---|---|"]
     L += [f"| {i+1} | {a['type']} | {a['target']} | {a['status']} | {a['retries'] + 1} | {a['policy'].get('rule')} | {a['undo']} |"
           for i, a in enumerate(rep["actions"])]
     L += ["", "## Approvals"] + ([f"- {x['decision']} by {x['by']} ({x['action']})" for x in rep["approvals"]] or ["- none"])
-    L += ["", "## Closure checks (independently observed)", "| Check | Result | Evidence |", "|---|---|---|"]
-    L += [f"| {c['description']} | {'PASS' if c['result'] else 'FAIL' if c['result'] is False else 'INCONCLUSIVE'} | "
-          f"`{json.dumps(c['evidence'])}` |" for c in rep["conditions"]]
+    L += ["", "## Closure checks (independently observed)",
+          "| Check | Result | SOC 2 | ISO 27001 | Evidence |", "|---|---|---|---|---|"]
+    for c in rep["conditions"]:
+        soc, iso, _ = control_for(c["method"])
+        L.append(f"| {c['description']} | {'PASS' if c['result'] else 'FAIL' if c['result'] is False else 'INCONCLUSIVE'} "
+                 f"| {soc} | {iso} | `{json.dumps(c['evidence'])}` |")
+    seen, L2 = set(), []
+    for c in rep["conditions"]:
+        soc, iso, intent = control_for(c["method"])
+        if (soc, iso) in seen or soc == "--":
+            continue
+        seen.add((soc, iso))
+        total = [x for x in rep["conditions"] if control_for(x["method"])[:2] == (soc, iso)]
+        passing = [x for x in total if x["result"] is True]
+        L2.append(f"| {soc} | {iso} | {intent} | {len(passing)}/{len(total)} |")
+    if L2:
+        L += ["", "## Control mapping",
+              "Each closure check is a fact observed on the live system, which is the kind of evidence these "
+              "controls are sampled for. This mapping is a starting point to confirm with your auditor, not a "
+              "claim that an audit would pass.", "",
+              "| SOC 2 | ISO 27001 | What the control is about | Checks passing |", "|---|---|---|---|"] + L2
     L += ["", "## Invariants"] + [f"- {k}: {'yes' if v else 'no'}" for k, v in rep["invariants"].items()]
+    L += ["", "## What Rook refused to do"] + (
+        [f"- **{r['what']}** -- {r['why']}" + (f" ({r['rule']})" if r.get("rule") else "")
+         for r in rep.get("refusals", [])] or ["- nothing: no action was blocked, declined or left waiting"])
     L += ["", "## Follow-ups for a person"] + ([f"- {x}" for x in rep["follow_ups"]] or ["- none"])
     L += ["", "## Audit integrity",
           f"Hash chain over {chain[2]} audit events: {'intact' if chain[0] else f'BROKEN at event {chain[1]}'}.",
