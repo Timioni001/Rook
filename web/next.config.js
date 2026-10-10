@@ -1,4 +1,4 @@
-// Dev: the browser talks to Next.js, which proxies /api/* to the Keywarden backend.
+// Dev: the browser talks to Next.js, which proxies /api/* to the Rook backend.
 // STATIC_EXPORT=1 builds plain files (web/out) that the backend serves itself, for single-container deploys.
 module.exports = process.env.STATIC_EXPORT === '1'
   ? { output: 'export' }

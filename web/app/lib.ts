@@ -1,6 +1,6 @@
 export type Identity = { key: string; token: string; label: string }
 
-// Local demo identities issued by the backend when KEYWARDEN_DEMO_TOKENS=1 (the default for local runs).
+// Local demo identities issued by the backend when ROOK_DEMO_TOKENS=1 (the default for local runs).
 export const IDENTITIES: Identity[] = [
   { key: 'analyst', token: 'demo-analyst-token', label: 'Sam · security analyst' },
   { key: 'approver', token: 'demo-approver-token', label: 'Priya · security lead (approver)' },
@@ -21,7 +21,7 @@ export async function api<T = any>(token: string, path: string, body?: unknown):
     init.body = JSON.stringify(body)
   }
   let r: Response
-  try { r = await fetch('/api' + path, init) } catch { throw new ApiError(0, 'Cannot reach the Keywarden backend.') }
+  try { r = await fetch('/api' + path, init) } catch { throw new ApiError(0, 'Cannot reach the Rook backend.') }
   const text = await r.text()
   let data: any = null
   try { data = text ? JSON.parse(text) : null } catch { data = null }

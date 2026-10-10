@@ -108,7 +108,7 @@ export default function Page() {
     <div className="page">
       <div className="frame">
         <nav className="nav" aria-label="Main">
-          <a className="brand" href="#top"><Star /> Keywarden</a>
+          <a className="brand" href="#top"><Star /> Rook</a>
           <div className="nav-links">
             <a href="#incident">Incident</a>
             <a href="#plan">Plan</a>
@@ -362,7 +362,7 @@ export default function Page() {
           )}
         </div>
 
-        <footer className="footer mono small">Keywarden · Rook agent · sandboxed mock integrations, synthetic credentials only</footer>
+        <footer className="footer mono small">Rook · built by Keywarden · sandboxed mock integrations, synthetic credentials only</footer>
       </div>
     </div>
   )

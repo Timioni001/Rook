@@ -1,4 +1,4 @@
-"""Keywarden HTTP API.
+"""Rook HTTP API.
 
     uvicorn rook.api:create_app --factory --port 8000
 
@@ -26,7 +26,7 @@ MAX_BODY = 8 * 1024
 INCIDENT_ID = re.compile(r"^inc-[0-9a-f]{8}$")
 ACTION_ID = re.compile(r"^inc-[0-9a-f]{8}-a\d{1,3}$")
 
-# Local demo identities. Replace with KEYWARDEN_TOKENS (JSON {token: principal}) anywhere shared.
+# Local demo identities. Replace with ROOK_TOKENS (JSON {token: principal}) anywhere shared.
 DEMO_TOKENS = {
     "demo-analyst-token": {"id": "u-sam", "name": "Sam (security analyst)", "org": "acme", "roles": ["analyst"]},
     "demo-approver-token": {"id": "u-priya", "name": "Priya (security lead)", "org": "acme",
@@ -53,22 +53,27 @@ class Empty(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def env(name, default=None):
+    """ROOK_<name>, falling back to the earlier KEYWARDEN_<name> spelling."""
+    return os.getenv(f"ROOK_{name}", os.getenv(f"KEYWARDEN_{name}", default))
+
+
 def _h(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
 def load_tokens():
-    raw = os.getenv("KEYWARDEN_TOKENS")
+    raw = env("TOKENS")
     if raw:
         return json.loads(raw)
-    if os.getenv("KEYWARDEN_DEMO_TOKENS", "1") == "1":
+    if env("DEMO_TOKENS", "1") == "1":
         return DEMO_TOKENS
     return {}
 
 
 def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate_limit=30, read_rate_limit=900):
-    db_path = db_path or os.getenv("KEYWARDEN_DB", "keywarden.db")
-    step_delay = float(os.getenv("KEYWARDEN_STEP_DELAY", "0.6")) if step_delay is None else step_delay
+    db_path = db_path or env("DB", "rook.db")
+    step_delay = float(env("STEP_DELAY", "0.6")) if step_delay is None else step_delay
     principals = {_h(t): Principal(**p) for t, p in (tokens if tokens is not None else load_tokens()).items()}
     store = Store(db_path)
     sb = Sandbox(store)
@@ -78,11 +83,11 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
 
     @asynccontextmanager
     async def lifespan(app):
-        obs.init_neatlogs(workflow_name="keywarden-api")
+        obs.init_neatlogs(workflow_name="rook-api")
         yield
         obs.shutdown()
 
-    app = FastAPI(title="Keywarden / Rook", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app = FastAPI(title="Rook", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.store, app.state.sandbox = store, sb
 
     # ---------------------------------------------------------------- middleware + errors
@@ -255,7 +260,7 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
         return {"action": a.id, "status": a.status.value}
 
     # Single-container deploys: serve the statically exported dashboard from the same origin.
-    static = pathlib.Path(os.getenv("KEYWARDEN_STATIC", pathlib.Path(__file__).parent.parent / "web" / "out"))
+    static = pathlib.Path(env("STATIC", pathlib.Path(__file__).parent.parent / "web" / "out"))
     if static.is_dir():
         app.mount("/", StaticFiles(directory=static, html=True), name="dashboard")
     return app

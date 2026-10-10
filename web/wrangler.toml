@@ -1,0 +1,4 @@
+# Cloudflare Pages project for the Rook dashboard (static export + /api proxy function).
+name = "rook"
+pages_build_output_dir = "out"
+compatibility_date = "2026-09-01"

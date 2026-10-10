@@ -12,9 +12,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY rook/ rook/
 COPY --from=web /web/out web/out
-RUN useradd --create-home --uid 10001 keywarden && mkdir /data && chown keywarden /data
-USER keywarden
-ENV KEYWARDEN_DB=/data/keywarden.db PYTHONUNBUFFERED=1
+RUN useradd --create-home --uid 10001 rook && mkdir /data && chown rook /data
+USER rook
+ENV ROOK_DB=/data/rook.db PYTHONUNBUFFERED=1
 EXPOSE 8000
 HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"
 CMD ["uvicorn", "rook.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
