@@ -25,6 +25,6 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.
-- Enable Entire on the remaining work and record checkpoint IDs.
+- Entire: the team decided not to use it for this build.
 - Link the existing cfo.ai plan.
 - Record the demo video and post #neatHack updates.
