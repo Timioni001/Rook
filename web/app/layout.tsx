@@ -1,6 +1,6 @@
 import './globals.css'
 
-export const metadata = { title: 'Keywarden · Rook', description: 'Investigate. Contain. Verify.' }
+export const metadata = { title: 'Rook · credential incident response', description: 'Investigate. Contain. Verify.' }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

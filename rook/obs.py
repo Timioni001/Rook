@@ -76,7 +76,7 @@ def init_neatlogs(workflow_name="rook-incident-response", tracer_provider=None, 
     import neatlogs
     _version = version()
     args = dict(api_key=key or "local-test", workflow_name=workflow_name,
-                tags=["keywarden", "rook", "sandbox", f"version:{_version}"], user_id="svc-rook",
+                tags=["rook", "sandbox", f"version:{_version}"], user_id="svc-rook",
                 mask=mask_span, capture_logs=True, pii_enabled=True)
     if os.getenv("ROOK_PLANNER") == "llm":
         args["instrumentations"] = ["anthropic"]      # model planner calls become LLM spans
