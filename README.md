@@ -44,10 +44,16 @@ In the dashboard, pick a scenario and click **Investigate offboarded contractor*
 
 To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. See [evidence/neatlogs-traces.md](evidence/neatlogs-traces.md).
 
+### One container (what runs on AWS)
+
+```bash
+docker build -t keywarden . && docker run --rm -p 8000:8000 keywarden   # http://localhost:8000
+```
+
 ### Tests and checks
 
 ```bash
-python -m pytest -q                      # 58 tests
+python -m pytest -q                      # 60 tests
 cd web && npx tsc --noEmit && npx next build
 ```
 
@@ -84,9 +90,10 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 
 ## Partner tools
 
-- **neatlogs**: every workflow phase is a span (`incident.run` WORKFLOW, `investigate`/`plan` AGENT, `policy.*`/`verify`/`closure.evaluate` GUARDRAIL, `execute` TOOL, `reconcile`/`checkpoint.restore` CHAIN). Attributes cover incident ID, adapter, action type, attempt, decision and verification result. Secret values are never included. The before/after comparison is the remediation-order change. [Evidence](evidence/neatlogs-traces.md).
+- **neatlogs**: one session per incident, with typed guardrail, tool and retriever spans, logged steps, a version tag and export masking. Every workflow phase is a span (`incident.run` WORKFLOW, `investigate`/`plan` AGENT, `policy.*`/`verify`/`closure.evaluate` GUARDRAIL, `execute` TOOL, `reconcile`/`checkpoint.restore` CHAIN). Attributes cover incident ID, adapter, action type, attempt, decision and verification result. Secret values are never included. The before/after comparison is the remediation-order change. [Evidence](evidence/neatlogs-traces.md).
 - **Entire**: checkpoints linking commits to the build sessions. [Evidence](evidence/entire-workflow.md).
 - **cfo.ai**: the business plan behind Keywarden's pricing and costs. [Evidence](evidence/cfo-ai-business-plan.md).
+- **AWS (optional, hackathon credit)**: hosts the public demo as one Lightsail container, so judges get a live link and the live instance exports neatlogs traces. See [deploy/README.md](deploy/README.md).
 
 ## Limitations
 

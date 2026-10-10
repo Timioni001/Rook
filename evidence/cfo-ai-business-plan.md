@@ -17,4 +17,4 @@ A share link, export (PDF/CSV) or screenshots of the existing plan. Once it's av
 
 - Rook makes no model calls in the default configuration. The rule-based planner is deterministic, so per-incident inference cost is zero unless `ROOK_PLANNER=llm` is set, which adds one planning call per incident.
 - Observability cost scales with spans. Measured demo runs emit 46 (clean), 51 (signature) and 53 (persistent failure) spans per incident.
-- Infrastructure is a single FastAPI process with SQLite plus a Next.js frontend.
+- Infrastructure is a single container (FastAPI + SQLite + static dashboard). The demo deploy uses one AWS Lightsail container service at the smallest (`nano`) power, paid from the hackathon AWS credit (`deploy/README.md`).

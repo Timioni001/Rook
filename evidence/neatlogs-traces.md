@@ -23,6 +23,22 @@
 
 Errors set span status `ERROR` plus `rook.error`. Secret values are replaced with fingerprints, and sensitive attribute keys are dropped.
 
+## neatlogs features used
+
+| Feature (docs) | How Rook uses it | Checked by |
+|---|---|---|
+| Sessions (`trace(session_id=…)`) | Every trace of one incident (start, each run, each approval) shares `session_id = incident id`, so a whole incident replays as one session | `test_neatlogs_features_sessions_guardrails_tools` |
+| End-user identity (`end_user_id`, metadata) | The human who started the incident or approved the revocation, with their org | same |
+| Custom attributes: GUARDRAIL (`neatlogs.guardrail.input/passed/output`) | Policy decisions, the pre-execution re-check, approvals, each independent verification and the final Verified Closure verdict show as Passed or Blocked | same |
+| Custom attributes: TOOL (`neatlogs.tool.name/description/parameters`) | Every adapter call, with its idempotency key and attempt number | same |
+| Custom attributes: RETRIEVER | Dependency discovery: the query is the key fingerprint, the documents are the services found | same |
+| `neatlogs.log` (`capture_logs=True`) | Timestamped steps: failed attempt, state inspection result, checkpoint resume | runtime only |
+| `version` + tags | Each trace is tagged with the git commit, so before and after runs can be filtered apart | same |
+| `mask` (client-side) + `pii_enabled` | The mask fingerprints any key value before export, in addition to the redaction applied when spans are created | `test_export_mask_replaces_secret_values` |
+| Auto-instrumentation (`instrumentations=["anthropic"]`) | When the optional model planner is on, its calls become LLM spans | not exercised in tests (needs a model key) |
+
+Detections and Alerts are configured in the neatlogs dashboard, not in code. Two worth adding once traces arrive: a regex detection on `sk_test_SYNTH` as a leak tripwire, which should never match, and a condition detection or alert on `neatlogs.guardrail.passed = false` for `closure.evaluate` spans, meaning an incident that wasn't closed.
+
 ## Before and after: remediation order
 
 The change: the original agent rotated the key (revoking the old one) and only then repaired the app. The current agent issues a replacement, moves every dependent, verifies each one and only then revokes. `probe.dependent_health` runs after every workflow step and records whether a dependent was broken.
