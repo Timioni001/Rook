@@ -4,7 +4,7 @@ Generated from real runs in the build environment on 2026-10-10 (UTC). Re-run wi
 
 ## Backend: `python -m pytest -v`
 
-Result: **58 passed** (Python 3.13, pytest). The one warning comes from Starlette's test client.
+Result: **58 passed** at the time of the raw output below. The current branch has **60** (2 more neatlogs feature tests) (Python 3.13, pytest). The one warning comes from Starlette's test client.
 
 ### Required scenarios → tests
 
@@ -103,3 +103,9 @@ Route (app)        Size     First Load JS
 ## Browser run
 
 A Playwright script drove the real dashboard against the real API. It created a `signature` incident, ran it, waited for the approval pause, switched to the approver identity, approved, and waited for `Closed · verified`. The screenshots are in [screenshots/](screenshots/). At 390 px the page width stayed 390 px, so there was no horizontal scroll.
+
+## Single-container check
+
+`STATIC_EXPORT=1 npx next build` produced `web/out`. Uvicorn served it at `/` (200, title "Keywarden · Rook"), with `/api/health` 200, an unknown `/api/*` 404 and an unauthenticated `/api/me` 401. The same Playwright flow ran end to end against that single origin.
+
+`docker build` itself couldn't be completed in the build environment because both Docker Hub and ECR Public returned 429 (rate limited). The image hasn't been built yet, so the first build will happen on the deploy machine.
