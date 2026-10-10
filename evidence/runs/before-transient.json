@@ -1,0 +1,18 @@
+{
+  "label": "before",
+  "scenario": "transient",
+  "incident": "inc-e9afc3",
+  "status": "closed_verified",
+  "duration_ms": 94.2,
+  "tool_calls": 5,
+  "audit_events": 20,
+  "workflow_steps": 9,
+  "dependent_outage_steps": 3,
+  "unhealthy_dependents": {
+    "billing-app": 3
+  },
+  "retries": {
+    "inc-e9afc3-a4": 1
+  },
+  "neatlogs_export": false
+}
