@@ -77,7 +77,7 @@ Rook starts from the completed offboarding ticket and works through these steps:
 
 ## Run it
 
-Requirements: Python 3.10 to 3.14 and Node 18 or later. **On Ubuntu/WSL, run `./scripts/setup-wsl.sh` once, then `./scripts/dev.sh`.**
+Requirements: Python 3.10 to 3.14 and Node 18 or later. **On Ubuntu/WSL, run `./scripts/setup-wsl.sh` once, then `./scripts/dev.sh` (local) or `./scripts/share.sh` (public link).**
 
 ```bash
 pip install -r requirements.txt
@@ -94,9 +94,9 @@ cd web && npm install && npm run dev            # http://localhost:3000
 
 In the dashboard, pick an incident type and a scenario, click **Investigate**, then click **Run plan**. When Rook pauses, switch identity to **Priya (approver)** and approve the revocation. The run continues to closure. Switch to **Eve**, who belongs to a different company, and the incident disappears.
 
-To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. **For the live deploy (neatlogs → AWS → Cloudflare), follow [deploy/README.md](deploy/README.md) step by step.**
+To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. **To go live (neatlogs traces plus a public demo link through Cloudflare), follow [deploy/README.md](deploy/README.md) step by step.**
 
-### One container (what runs on AWS)
+### One container
 
 ```bash
 docker build -t rook . && docker run --rm -p 8000:8000 rook   # http://localhost:8000
@@ -148,8 +148,7 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 - **neatlogs**: one session per incident, with typed guardrail, tool and retriever spans, logged steps, a version tag and export masking. Every workflow phase is a span (`incident.run` WORKFLOW, `investigate`/`plan` AGENT, `policy.*`/`verify`/`closure.evaluate` GUARDRAIL, `execute` TOOL, `reconcile`/`checkpoint.restore` CHAIN). Attributes cover incident ID, adapter, action type, attempt, decision and verification result. Secret values are never included. The before/after comparison is the remediation-order change. [Evidence](evidence/neatlogs-traces.md).
 - **Entire**: records the agent coding sessions that build Rook as checkpoints linked to commits, enabled from 2026-10-10 09:30 UTC. [How to inspect them](evidence/entire-workflow.md).
 - **cfo.ai**: the business plan behind Keywarden's pricing and costs. [Evidence](evidence/cfo-ai-business-plan.md).
-- **AWS (hackathon credit)**: runs the agent and API as one Lightsail container, and exports neatlogs traces from live runs.
-- **Cloudflare Pages**: serves the dashboard and forwards `/api/*` to AWS through a Pages Function. Both are covered in [deploy/README.md](deploy/README.md).
+- **Cloudflare**: Cloudflare Tunnel gives the locally running demo a public https link (`scripts/share.sh`). Optionally, Cloudflare Pages serves the dashboard and forwards `/api/*` through a Pages Function. Both are covered in [deploy/README.md](deploy/README.md).
 
 ## Limitations
 

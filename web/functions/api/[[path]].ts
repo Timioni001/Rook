@@ -1,5 +1,5 @@
 // Cloudflare Pages Function: forwards /api/* from the Pages site to the Rook backend.
-// Set ROOK_API_ORIGIN (e.g. the AWS Lightsail URL) in the Pages project's environment variables.
+// Set ROOK_API_ORIGIN (e.g. the Cloudflare Tunnel address from scripts/share.sh) in the Pages project's environment variables.
 export async function onRequest(context: any): Promise<Response> {
   const { request, env } = context
   const origin: string | undefined = env.ROOK_API_ORIGIN
