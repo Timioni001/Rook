@@ -294,7 +294,7 @@ class Engine:
                 if decision == "blocked":
                     self.store.audit(iid, "escalated", {"action": a.id, "reason": reason})
             self.store.checkpoint(iid, "planned", {"statuses": {a.id: a.status.value for a in plan}})
-            inc.status = IS.awaiting_approval.value if any(a.status == S.needs_approval for a in plan) else "ready"
+            inc.status = IS.ready.value         # approval is asked for when the run reaches that step
             self.store.save_incident(inc)
             root.set(subject=subject, actions=len(plan), status=inc.status)
         return inc
@@ -541,7 +541,10 @@ class Engine:
                        "reason": a.policy.get("reason") if a.status in (S.blocked, S.needs_approval)
                        else a.result.get("error", "not run yet")}
                       for a in acts if a.status != S.verified]
-        if closed:
+        calls = self.store.tool_calls(iid)
+        if inc.status in (IS.ready.value, IS.investigating.value) and not calls:
+            status = inc.status
+        elif closed:
             status = IS.closed_verified.value
         elif any(a.status in UNRESOLVED_BAD for a in acts) or (bad and all(c.result is not None for c in mandatory)
                                                                and all(a.status == S.verified for a in acts)):
@@ -549,8 +552,7 @@ class Engine:
         elif any(a.status == S.needs_approval for a in acts):
             status = IS.awaiting_approval.value
         else:
-            status = inc.status if inc.status in ("ready", IS.investigating.value) else IS.open.value
-        calls = self.store.tool_calls(iid)
+            status = IS.open.value
         return {
             "incident": inc.model_dump(mode="json"),
             "status": status,
@@ -558,7 +560,8 @@ class Engine:
             "exposure": inc.exposure,
             "invariants": inv,
             "conditions": [c.model_dump(mode="json") for c in conds],
-            "actions": [{"id": a.id, "type": a.type, "target": a.target, "status": a.status.value,
+            "actions": [{"id": a.id, "type": a.type, "target": a.target, "service": a.params.get("service"),
+                         "status": a.status.value,
                          "depends_on": a.depends_on, "summary": a.summary, "risk": a.risk,
                          "retries": a.retries, "policy": a.policy, "result": a.result,
                          "evidence": a.evidence} for a in acts],
