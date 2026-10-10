@@ -5,11 +5,11 @@ Entire stores checkpoints as git refs (refs/entire/checkpoints/*). Those refs on
 explicit push, so this script also writes each checkpoint as plain files that are committed with the
 code and merge into main with it. Per checkpoint it keeps the metadata, the prompt and the compact
 transcript (the full transcript stays in the ref). Email addresses and model identifiers are
-redacted on the way out.
+redacted on the way out, plus any extra words listed (comma-separated) in ENTIRE_REDACT.
 
     python3 scripts/export-entire-checkpoints.py          # export new checkpoints, then commit them
 """
-import json, pathlib, re, subprocess
+import json, os, pathlib, re, subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / ".entire" / "checkpoints"
@@ -21,8 +21,14 @@ def git(*a):
     return subprocess.run(["git", "-C", str(ROOT), *a], capture_output=True, check=True).stdout
 
 
+EXTRA = [w.encode() for w in os.getenv("ENTIRE_REDACT", "").split(",") if w.strip()]
+
+
 def clean(data: bytes) -> bytes:
-    return MODEL.sub(b"[model]", EMAIL.sub(b"[email]", data))
+    data = MODEL.sub(b"[model]", EMAIL.sub(b"[email]", data))
+    for w in EXTRA:
+        data = data.replace(w, b"[redacted]")
+    return data
 
 
 def export(ref):

@@ -23,5 +23,6 @@ ls .entire/checkpoints/          # the same checkpoints as committed files, no E
 | Checkpoint | Commit | What the session did |
 |---|---|---|
 | [01M4JJDPPS6G0H9544VZHFBCK3](../.entire/checkpoints/01M4JJDPPS6G0H9544VZHFBCK3/) | `0a24e08` | Turned Entire on and documented it |
+| [01M4K7NDN001T1HH28YF5J9VE8](../.entire/checkpoints/01M4K7NDN001T1HH28YF5J9VE8/) | `c8be14d` | Committed checkpoints into the repo so they merge into main |
 
 Run `ls .entire/checkpoints` for the current list. Each folder name matches an `Entire-Checkpoint:` trailer in `git log`.
