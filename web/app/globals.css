@@ -32,11 +32,11 @@ code { font-family: var(--mono); word-break: break-word }
 .who select { border-radius: 12px; font-family: var(--mono); font-size: 13px; min-width: 230px }
 @media (max-width: 760px) { .nav-links { display: none } .who { margin-left: auto } }
 @media (max-width: 480px) { .who, .who select { width: 100%; min-width: 0 } }
-.hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 24px; align-items: center; padding: 48px 0 24px }
+.hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 32px; align-items: start; padding: 36px 0 24px }
 .hero h1 { font-size: clamp(32px, 4.6vw, 52px); line-height: 1.08; letter-spacing: -.02em; margin: 0 0 14px; font-weight: 500 }
 .hero-copy > p { max-width: 520px }
 .hero-form { margin-top: 22px; max-width: 560px }
-.hero-art { width: 100%; height: auto; max-height: 300px }
+.hero-art { width: 100%; height: auto; max-height: 240px }
 @media (max-width: 820px) { .hero { grid-template-columns: 1fr; padding-top: 28px } .hero-art { max-height: 200px; order: -1 } }
 .strip { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; padding: 18px 0; margin: 8px 0 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 700; text-transform: lowercase; color: #3a3a3a }
 
@@ -178,3 +178,65 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 }
 @keyframes waking-pulse { 0%, 100% { opacity: .25 } 50% { opacity: 1 } }
 @media (prefers-reduced-motion: reduce) { .card.notice.waking::before { animation: none; opacity: 1 } }
+
+/* ---- the judge's way in: a short guide that is open-able, not in the way ---- */
+.howto { border: 2px solid var(--ink); border-radius: var(--radius); background: var(--paper);
+         box-shadow: var(--shadow); margin: 20px 0 0; overflow: hidden }
+.howto > summary { display: flex; align-items: center; gap: 12px; padding: 16px 22px; cursor: pointer;
+                   list-style: none; font-size: 18px }
+.howto > summary::-webkit-details-marker { display: none }
+.howto-badge { background: var(--lime); border: 1.5px solid var(--ink); border-radius: 999px;
+               padding: 3px 11px; font-size: 13px; font-weight: 700 }
+.howto-chev { margin-left: auto; font-family: var(--mono); font-size: 22px; line-height: 1 }
+.howto[open] .howto-chev { transform: rotate(45deg) }
+.howto-steps { list-style: none; margin: 0; padding: 4px 22px 6px; display: grid; gap: 14px;
+               border-top: 2px solid var(--line) }
+.howto-steps > li { display: flex; gap: 14px; align-items: baseline }
+.howto-steps > li:first-child { margin-top: 16px }
+.howto-steps b { display: block }
+.howto-steps .small { color: var(--mute) }
+.howto-num { background: var(--soft); border-radius: 7px; padding: 2px 7px; font-size: 13px; flex: 0 0 auto }
+.howto-foot { padding: 0 22px 18px; margin: 10px 0 0 }
+
+/* ---- hero: a short welcome on the left, the explanation beside the key on the right ---- */
+.hero-copy > .lead { max-width: 520px; font-size: 19px; color: var(--mute); margin: 0 }
+.hero-side { display: flex; flex-direction: column; gap: 18px }
+.card.explain { padding: 20px 22px; box-shadow: none; background: var(--soft); border-width: 2px }
+.card.explain p { margin: 0 0 10px; font-size: 16.5px; line-height: 1.5 }
+.card.explain p:last-child { margin: 0; color: var(--mute) }
+
+/* ---- five problem types: show them all at once rather than hiding any behind a scroll ---- */
+.playbooks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px }
+.playbooks .chip { align-items: flex-start; text-align: left; height: 100% }
+
+@media (max-width: 880px) {
+  .hero { grid-template-columns: 1fr }
+  .playbooks { grid-template-columns: 1fr }
+  .howto > summary { padding: 14px 16px; font-size: 16px }
+  .howto-steps, .howto-foot { padding-left: 16px; padding-right: 16px }
+}
+
+/* ---- KPI tiles: a big number, a meter only where there is a whole, one line of meaning ---- */
+.stat-body { display: flex; flex-direction: column; gap: 10px }
+.stat-note { color: var(--mute); line-height: 1.35 }
+.stat-dark .stat-note { color: #b9b9b9 }
+.meter { display: block; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden }
+.stat-dark .meter { background: #3a3a3a }
+.meter > span { display: block; height: 100%; border-radius: 999px; background: var(--lime) }
+
+/* ---- the day, before and after ---- */
+.day { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
+.day-row { display: grid; grid-template-columns: 58px 1fr 24px 1.1fr auto; gap: 12px; align-items: center;
+           border: 1.5px solid var(--ink); border-radius: 16px; padding: 10px 16px; background: var(--paper) }
+.day-row.open { background: var(--warn-bg) }
+.day-time { font-size: 15px; font-weight: 700 }
+.day-who { display: flex; flex-direction: column; min-width: 0 }
+.day-who .small { color: var(--mute) }
+.day-arrow { color: var(--mute); text-align: center }
+.day-new { font-size: 14px }
+.day-row.open .day-new { color: var(--warn) }
+@media (max-width: 880px) {
+  .day-row { grid-template-columns: 52px 1fr auto; row-gap: 6px }
+  .day-arrow { display: none }
+  .day-new { grid-column: 1 / -1 }
+}

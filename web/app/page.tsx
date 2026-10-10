@@ -191,14 +191,12 @@ export default function Page() {
           </div>
         )}
 
+        <HowToUse />
+
         <header className="hero" id="top">
           <div className="hero-copy">
-            <h1>The problems that fall between your systems.</h1>
-            <p>Rook connects to the software a company already runs. Staff report a problem, Rook works out what is
-              really going on across every system it touches, proposes a fix, waits for a person to approve anything
-              that affects someone outside the building, then checks the result and shows the proof. It does not
-              replace your appointment book or your accounting software. It does the chasing and coordinating that
-              otherwise lands on a member of staff.</p>
+            <h1>Start with a problem. Rook takes it from there.</h1>
+            <p className="lead">Pick one below and watch it work.</p>
             <div className="hero-form">
               <span className="mono small">Incident type</span>
               <div className="row playbooks" role="group" aria-label="Incident type">
@@ -220,7 +218,16 @@ export default function Page() {
               {me && !isAnalyst && <p className="small muted">{who.label} cannot start incidents.</p>}
             </div>
           </div>
-          <HeroArt />
+          <aside className="hero-side">
+            <div className="card explain">
+              <p>Rook connects to the software a company already runs. Staff report a problem, Rook works out what
+                is really going on across every system it touches, proposes a fix, waits for a person to approve
+                anything that reaches someone outside the building, then checks the result and shows the proof.</p>
+              <p>It does not replace your appointment book or your accounting software. It does the chasing and
+                coordinating between them that otherwise lands on a member of staff.</p>
+            </div>
+            <HeroArt />
+          </aside>
         </header>
 
         <HowItWorks />
@@ -292,10 +299,21 @@ export default function Page() {
                 </div>
               </div>
               <div className="stats">
-                <Stat dark={false} label="Actions verified" value={`${R.actions.filter((a: any) => a.status === 'verified').length}/${R.actions.length}`} />
-                <Stat dark label="Closure checks passing" value={`${R.conditions.filter((c: any) => c.result === true).length}/${R.conditions.length}`} />
-                <Stat dark label="Failed tool calls" value={R.metrics.failed_tool_calls} />
-                <Stat dark={false} label={R.metrics.contain_label} value={R.metrics.seconds_to_contain != null ? `${R.metrics.seconds_to_contain}s` : '—'} />
+                <Stat dark={false} label="Steps verified" note="checked against the systems, not Rook's word"
+                  value={`${R.actions.filter((a: any) => a.status === 'verified').length}/${R.actions.length}`}
+                  of={{ done: R.actions.filter((a: any) => a.status === 'verified').length, total: R.actions.length }} />
+                <Stat dark label="Proof it worked" note="every one must pass before anything is called done"
+                  value={`${R.conditions.filter((c: any) => c.result === true).length}/${R.conditions.length}`}
+                  of={{ done: R.conditions.filter((c: any) => c.result === true).length, total: R.conditions.length }} />
+                <Stat dark label="Work it replaced" note={`across ${R.metrics.systems_touched} system${R.metrics.systems_touched === 1 ? '' : 's'}`}
+                  value={R.metrics.manual_steps_replaced} />
+                <Stat dark={false} label={R.metrics.contain_label}
+                  note={R.metrics.declined > 0
+                    ? `${R.metrics.declined} step${R.metrics.declined === 1 ? '' : 's'} refused on purpose`
+                    : R.metrics.waiting_on_a_person > 0
+                      ? `${R.metrics.waiting_on_a_person} waiting on a person`
+                      : 'nothing refused'}
+                  value={R.metrics.seconds_to_contain != null ? `${R.metrics.seconds_to_contain}s` : '—'} />
               </div>
             </section>
 
@@ -325,6 +343,8 @@ export default function Page() {
                 </section>
               )
             })}
+
+            {R.playbook?.key === 'cover' && <DayStrip R={R} />}
 
             {/* Graph + findings */}
             <section className="section">
@@ -514,6 +534,37 @@ export default function Page() {
   )
 }
 
+function HowToUse() {
+  const steps = [
+    ['Pick a problem and press the button', 'Each one is a real situation. Start with “A doctor calls in sick”, scenario “cover clean”.'],
+    ['Read what Rook found', 'It has looked across every connected system and changed nothing yet. The Findings say who is affected and why.'],
+    ['Press Run plan', 'Watch the Plan and the Timeline. Each step is checked against the system itself before the next one starts.'],
+    ['Approve when it stops', 'Rook will not message a patient without a person saying yes. Switch the menu at the top right to Priya (manager) and approve.'],
+    ['Check the proof, not the promise', 'Verification lists what was confirmed against the live systems. Closed means every one of them passed.'],
+    ['See what it refused to do', 'Open “Limits”. Try scenario “cover unreachable” to watch Rook deliberately leave one appointment alone, and say why.'],
+    ['Take the evidence away', 'Download the evidence pack at the bottom: every action, approval, check and a tamper-evident audit trail.'],
+  ]
+  return (
+    <details className="howto">
+      <summary>
+        <span className="howto-badge mono">Start here</span>
+        <b>How to use this in two minutes</b>
+        <span className="howto-chev" aria-hidden="true">+</span>
+      </summary>
+      <ol className="howto-steps">
+        {steps.map(([t, d], i) => (
+          <li key={t}>
+            <span className="howto-num mono">{String(i + 1).padStart(2, '0')}</span>
+            <div><b>{t}</b><span className="small">{d}</span></div>
+          </li>
+        ))}
+      </ol>
+      <p className="small muted howto-foot">Every system Rook touches here is a sandboxed copy with made-up data.
+        Nothing real is changed, and no real person is contacted.</p>
+    </details>
+  )
+}
+
 function HowItWorks() {
   const steps = [
     ['A problem comes in', 'A doctor calls in sick, an order is late, someone leaves. Staff raise it, or a connected system does.'],
@@ -580,12 +631,54 @@ function SectionTitle({ label, text }: { label: string; text: string }) {
   )
 }
 
-function Stat({ label, value, dark }: { label: string; value: any; dark: boolean }) {
+function Stat({ label, value, dark, note, of }: {
+  label: string; value: any; dark: boolean; note?: string; of?: { done: number; total: number }
+}) {
+  // A meter only where there is a whole to be a part of. Everything else is a plain number,
+  // which reads faster than a chart would.
+  const pct = of && of.total ? Math.round((of.done / of.total) * 100) : null
   return (
     <div className={`stat ${dark ? 'stat-dark' : ''}`}>
       <span className="small"><mark>{label}</mark></span>
-      <b>{value}</b>
+      <div className="stat-body">
+        <b>{value}</b>
+        {pct !== null && (
+          <div className="meter" role="img" aria-label={`${of!.done} of ${of!.total}`}>
+            <span style={{ width: `${pct}%` }} />
+          </div>
+        )}
+        {note && <span className="stat-note small">{note}</span>}
+      </div>
     </div>
+  )
+}
+
+/* The day, before and after. Times and labels carry the meaning; colour only repeats it. */
+function DayStrip({ R }: { R: any }) {
+  const rows = (R.incident.relationships || []).filter((r: any) => r.rel === 'booking')
+  if (!rows.length) return null
+  const byTarget: Record<string, any> = {}
+  for (const a of R.actions) if (a.type === 'move_appointment') byTarget[a.target] = a
+  const moved = rows.filter((r: any) => byTarget[r.appointment]?.status === 'verified').length
+  return (
+    <section className="section">
+      <SectionTitle label="The day" text={`${rows.length} people were booked in. ${moved} have been moved to a doctor who is in; the rest are still on the absent doctor's list.`} />
+      <ul className="day">
+        {rows.map((r: any) => {
+          const a = byTarget[r.appointment]
+          const done = a?.status === 'verified'
+          return (
+            <li key={r.appointment} className={`day-row ${done ? 'done' : 'open'}`}>
+              <span className="mono day-time">{r.time}</span>
+              <span className="day-who"><b>{r.patient_name}</b><span className="small">{r.reason}</span></span>
+              <span className="day-arrow mono" aria-hidden="true">→</span>
+              <span className="mono day-new">{done ? `${r.new_time} · ${r.to_doctor_name}` : '—'}</span>
+              <Pill tone={done ? 'ok' : 'warn'}>{done ? 'moved and told' : 'left for reception'}</Pill>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 

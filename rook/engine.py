@@ -598,6 +598,8 @@ class Engine:
                         "independent_checks": len(conds),
                         "human_decisions": len([a for a in acts if a.policy.get("rule") in ("R5-approval", "R8-known-good")]),
                         "refusals": len(refusals),
+                        "declined": sum(r["kind"] in ("declined", "blocked") for r in refusals),
+                        "waiting_on_a_person": sum(r["kind"] == "waiting" for r in refusals),
                         "contain_label": pb.contain_label,
                         "seconds_to_contain": round(dead_at - inc.created_at, 1) if dead_at else None,
                         "seconds_until_old_key_dead": (round(dead_at - inc.created_at, 1)
@@ -709,8 +711,12 @@ def summarize(inc, acts, status, bad, pb):
         return pb.closed_summary(len(acts))
     if status == IS.awaiting_approval.value:
         waiting = [a for a in acts if a.status == S.needs_approval]
-        return (f"{done} of {len(acts)} actions verified. Waiting for a person to approve: "
-                + "; ".join(a.summary for a in waiting))
+        # A dozen near-identical steps read as a wall of text, so name the first two and count the rest.
+        shown = "; ".join(a.summary for a in waiting[:2])
+        more = len(waiting) - 2
+        return (f"{done} of {len(acts)} steps verified. Waiting for a person to approve "
+                f"{len(waiting)} step{'' if len(waiting) == 1 else 's'}: " + shown
+                + (f" And {more} more like it." if more > 0 else ""))
     if status == IS.escalated.value:
         probs = [f"{a.id} {a.type} on {a.target} is {a.status.value}" for a in acts if a.status in UNRESOLVED_BAD]
         return ("Escalated to a human: Rook could not finish safely and will not claim success. "

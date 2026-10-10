@@ -78,6 +78,16 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 - The dashboard now leads with the clinic. Identities are staff and manager rather than IT roles, and the front page says what a company is actually buying: one place for unfinished problems, connections to existing software, an agent that coordinates, and approval, audit and proof.
 - 112 tests. Checked in a browser through the Cloudflare proxy: the absence is picked up, every patient contact waits for approval, and the one person who cannot be reached keeps the day honestly unfinished.
 
+**03:20: a way in for someone who has never seen it.** The front page explained the product before it invited anyone to try it, which is the wrong order for a judge with three minutes.
+
+- Short welcome at the top ("Start with a problem. Rook takes it from there."), with the longer explanation moved beside the key illustration rather than in front of the controls.
+- A **Start here** panel that opens into seven steps: pick a problem, read what Rook found, run it, approve when it stops, check the proof, open the limits, take the evidence away. It names the scenario to try for the refusal.
+- All five problem types are visible at once in a grid instead of stacked down the page.
+- KPI tiles rebuilt: a large number, a meter only where there is a whole to be part of, and one line saying what it means. A day strip for the absence playbook shows all twelve appointments, old time to new time, with the one left for reception highlighted.
+- Two faults the new playbook exposed and this pass fixed: the summary line listed all twelve approval steps as one run-on paragraph, and the tiles counted steps waiting for a person as "refused". Waiting and refused are now counted apart.
+
+Asked about a React Native component library for the visuals. It cannot be used: the dashboard is a Next.js web build, and `expo install`, reanimated, gesture-handler and expo-linear-gradient need a React Native runtime that does not exist here. Rebuilt the same ideas with the design tokens already in the stylesheet and no new dependencies.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.
