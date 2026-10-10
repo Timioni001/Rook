@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pydantic>=2
+pytest
+anthropic   # optional: only if ROOK_PLANNER=llm
