@@ -18,3 +18,14 @@ A share link, export (PDF/CSV) or screenshots of the existing plan. Once it's av
 - Rook makes no model calls in the default configuration. The rule-based planner is deterministic, so per-incident inference cost is zero unless `ROOK_PLANNER=llm` is set, which adds one planning call per incident.
 - Observability cost scales with spans. Measured demo runs emit 46 (clean), 51 (signature) and 53 (persistent failure) spans per incident.
 - Infrastructure is a single container (FastAPI + SQLite + static dashboard). The demo runs on the team's own machine and is shared through a free Cloudflare quick tunnel, so the hackathon demo has no hosting cost (`deploy/README.md`).
+
+## What to enter in cfo.ai (facts only; the team sets the prices)
+
+- **Product:** Rook, B2B software that resolves IT incidents and access tasks for growing companies and proves each fix was completed correctly.
+- **Segments:** startups and SMEs (offboarding, access, routine IT), mid-size companies (outages, recovery, compliance), enterprises (complex multi-system incident response).
+- **Playbooks shipped:** credential offboarding, service outage (bad deploy rollback).
+- **Cost per incident today:** no model calls by default; 46 to 53 observability spans per incident; one small container per customer (FastAPI + SQLite).
+- **Hosting for the demo:** none, because it runs on the team's machine behind a free Cloudflare quick tunnel.
+- **Left to the team:** price per seat or per incident, team size and salaries, customer targets. Rook's repository has no source for these.
+
+Plan link: _paste the cfo.ai share link here once it exists._

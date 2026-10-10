@@ -3,6 +3,7 @@
 # Open http://localhost:3000 in your Windows browser; WSL forwards localhost automatically.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+[[ -f .env ]] && set -a && . ./.env && set +a      # NEATLOGS_API_KEY saved by share.sh, if any
 PY=python3; [[ -x .venv/bin/python ]] && PY=.venv/bin/python
 
 "$PY" -m uvicorn rook.api:create_app --factory --port 8000 &

@@ -155,3 +155,16 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .playbooks { margin-bottom: 14px }
 .playbooks .chip { flex-direction: column; align-items: flex-start; gap: 2px; max-width: 280px }
 .playbooks .chip .small { opacity: .8 }
+
+.how { list-style: none; margin: 8px 0 24px; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px }
+.how li { display: flex; flex-direction: column; gap: 4px; border: 1.5px solid var(--ink); border-radius: var(--radius); padding: 14px 16px; background: var(--paper) }
+.how li b { font-size: 17px }
+.how li .mono { background: var(--lime); align-self: flex-start; padding: 0 6px; border-radius: 4px }
+@media (max-width: 820px) { .how { grid-template-columns: 1fr 1fr } }
+@media (max-width: 480px) { .how { grid-template-columns: 1fr } }
+.guide { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; background: var(--ink); color: #fff;
+  border-radius: var(--radius); padding: 16px 22px; margin-bottom: 20px; position: sticky; top: 8px; z-index: 5 }
+.guide > .mono { color: var(--ink); background: var(--lime); padding: 2px 8px; border-radius: 4px; white-space: nowrap }
+.guide p { margin: 4px 0 0; opacity: .85 }
+.guide .btn-outline { background: #fff }
+@media (max-width: 640px) { .guide { grid-template-columns: 1fr; position: static } }

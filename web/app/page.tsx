@@ -77,7 +77,8 @@ export default function Page() {
     } catch (e: any) { setErr(e.message); setList([]) }
   }, [who.token])
 
-  useEffect(() => { setD(null); setId(null); loadList() }, [loadList])
+  // On identity switch keep the open incident; if the new identity can't see it, loadIncident clears it.
+  useEffect(() => { setD(null); loadList() }, [loadList])
 
   const loadIncident = useCallback(async (iid: string) => {
     try {
@@ -175,6 +176,13 @@ export default function Page() {
           <HeroArt />
         </header>
 
+        <HowItWorks />
+
+        <Guide R={R} d={d} me={me} busy={busy} who={who}
+          onRun={() => act(() => api(who.token, `/incidents/${id}/run`, {}), 'Run started.')}
+          onApprover={() => setWho('approver')}
+          onTry={(pb: string, sc: string) => { setPlaybook(pb); setScenario(sc); setId(null); setD(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
+
         <p className="strip mono" role="note">
           <span>sandbox</span><span>mock integrations</span><span>org {me?.org || '…'}</span><span>{me ? me.roles.join(' + ') : 'loading'}</span>
         </p>
@@ -248,7 +256,7 @@ export default function Page() {
             {pending.map((a: any) => {
               const ready = a.depends_on.every((x: string) => R.actions.find((y: any) => y.id === x)?.status === 'verified')
               return (
-                <section key={a.id} className="section">
+                <section key={a.id} className="section" id="approval">
                   <div className="approval" aria-labelledby={`ap-${a.id}`}>
                     <div>
                       <h2 id={`ap-${a.id}`} className="h3"><mark>{ready ? 'Approval needed now' : 'Approval will be needed'}</mark></h2>
@@ -413,6 +421,63 @@ export default function Page() {
         <footer className="footer mono small">Rook · the operations agent that proves the fix · built by Keywarden · sandboxed mock integrations, synthetic credentials only</footer>
       </div>
     </div>
+  )
+}
+
+function HowItWorks() {
+  const steps = [
+    ['Investigate', 'Rook reads every connected system and maps what is affected. Nothing is changed yet.'],
+    ['Plan', 'It writes the fix as ordered steps, plus the checks that must pass before it can call the incident closed.'],
+    ['Fix safely', 'Each step is checked against company rules. Risky ones wait for a person. Failures are inspected, not blindly retried.'],
+    ['Prove it', 'Independent checks confirm the fix really worked. If they fail, Rook says so and hands over to a person.'],
+  ]
+  return (
+    <ol className="how" aria-label="How Rook works">
+      {steps.map(([t, x], i) => (
+        <li key={t}><span className="mono small">{String(i + 1).padStart(2, '0')}</span><b>{t}</b><span className="small">{x}</span></li>
+      ))}
+    </ol>
+  )
+}
+
+/** Plain-language "what now?" for whoever is looking at the screen. */
+function Guide({ R, d, me, busy, who, onRun, onApprover, onTry }: any) {
+  const isApprover = !!me?.roles.includes('approver'), isAnalyst = !!me?.roles.includes('analyst')
+  let step = '', title = '', text = '', action: React.ReactNode = null
+  if (!R) {
+    step = 'Start'; title = 'Pick an incident type above and click Investigate.'
+    text = 'Access & offboarding: someone left, but their access lives on. Service outage: a live service broke after a deploy. Both run on fake systems, so nothing real is touched.'
+    if (me && !isAnalyst) text = `${who.label} can only watch. Switch to Sam in the top-right menu to start an incident.`
+  } else if (d?.running) {
+    step = 'Working'; title = 'Rook is fixing the incident now.'
+    text = 'Watch the Plan steps turn green and the Timeline fill in. If a step fails, the Failure and recovery panel shows what Rook did about it.'
+  } else if (R.status === 'ready') {
+    step = 'Step 2 of 4'; title = 'Rook has investigated and made a plan. Nothing has changed yet.'
+    text = 'Skim the Findings and the Plan below, then start the fix.'
+    if (isAnalyst) action = <button className="btn-dark" disabled={busy} onClick={onRun}>Run plan</button>
+  } else if (R.status === 'awaiting_approval') {
+    step = 'Step 3 of 4'; title = 'Rook is waiting for a person to approve a step that cannot be undone.'
+    text = isApprover ? 'Read the black approval card below, then approve or reject it.' : 'Only someone with approver rights can sign off, like Priya, the IT lead.'
+    if (!isApprover) action = <button className="btn-lime" onClick={onApprover}>Switch to Priya (approver)</button>
+    else action = <button className="btn-lime" onClick={() => document.getElementById('approval')?.scrollIntoView({ behavior: 'smooth' })}>Go to the approval</button>
+  } else if (R.status === 'closed_verified') {
+    step = 'Done'; title = 'Fixed, and proven fixed: every check passed on the live systems.'
+    text = 'Download the evidence pack from the Report at the bottom, or see how Rook handles a fix that does not work.'
+    action = R.playbook?.key === 'outage'
+      ? <button className="btn-outline" onClick={() => onTry('outage', 'outage_wrong_cause')}>Try: rollback does not help</button>
+      : <button className="btn-outline" onClick={() => onTry('offboarding', 'faulty_update')}>Try: a service breaks mid-fix</button>
+  } else if (R.status === 'escalated') {
+    step = 'Handed to a person'; title = 'Rook stopped safely instead of pretending it worked.'
+    text = 'The Report at the bottom says exactly which checks failed and what a person needs to do next ("Left for a person").'
+  } else {
+    step = 'In progress'; title = R.summary; text = ''
+  }
+  return (
+    <section className="guide" aria-live="polite" aria-label="What to do next">
+      <span className="mono small">{step}</span>
+      <div><b>{title}</b>{text && <p className="small">{text}</p>}</div>
+      {action}
+    </section>
   )
 }
 
