@@ -1,0 +1,10 @@
+{
+  "name": "rook",
+  "private": true,
+  "description": "Repo-root entry point so the dashboard builds whichever directory a host starts in.",
+  "scripts": {
+    "build": "bash scripts/build-pages.sh",
+    "build:static": "bash scripts/build-pages.sh"
+  },
+  "engines": { "node": ">=18" }
+}

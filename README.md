@@ -96,6 +96,16 @@ In the dashboard, pick an incident type and a scenario, click **Investigate**, t
 
 To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. **To go live with no terminal (Render runs the agent, Cloudflare Pages serves the dashboard, neatlogs traces every incident), follow [deploy/README.md](deploy/README.md).**
 
+### Keep a live demo usable at any hour
+
+```bash
+ROOK_API_ORIGIN=https://<service>.onrender.com ./scripts/deploy-keepwarm.sh   # cron worker, agent never sleeps
+ROOK_API_ORIGIN=https://<service>.onrender.com ./scripts/deploy-pages.sh      # upload the dashboard, no Git build
+python3 scripts/check-live.py https://<project>.pages.dev                     # run a real incident against the live site
+```
+
+`check-live.py` wakes the agent, loads the dashboard, runs an incident through to Verified Closure and prints `PASS`, so the link can be checked in one command before anyone arrives. The dashboard also detects a sleeping agent and waits for it instead of showing an error.
+
 ### One container
 
 ```bash
@@ -106,7 +116,8 @@ docker build -t rook . && docker run --rm -p 8000:8000 rook   # http://localhost
 
 ```bash
 python -m pytest -q                      # 80 tests
-cd web && npx tsc --noEmit && npx next build
+cd web && npm ci && npx tsc --noEmit && npm run build:static
+bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 ```
 
 ### Scenarios
@@ -148,7 +159,7 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 - **neatlogs**: one session per incident, with typed guardrail, tool and retriever spans, logged steps, a version tag and export masking. Every workflow phase is a span (`incident.run` WORKFLOW, `investigate`/`plan` AGENT, `policy.*`/`verify`/`closure.evaluate` GUARDRAIL, `execute` TOOL, `reconcile`/`checkpoint.restore` CHAIN). Attributes cover incident ID, adapter, action type, attempt, decision and verification result. Secret values are never included. The before/after comparison is the remediation-order change. [Evidence](evidence/neatlogs-traces.md).
 - **Entire**: records the agent coding sessions that build Rook as checkpoints linked to commits, enabled from 2026-10-10 09:30 UTC. [How to inspect them](evidence/entire-workflow.md).
 - **cfo.ai**: the business plan behind Keywarden's pricing and costs. [Evidence](evidence/cfo-ai-business-plan.md).
-- **Cloudflare**: Cloudflare Pages serves the dashboard and forwards `/api/*` through a Pages Function to the agent on Render (`render.yaml`). Cloudflare Tunnel (`scripts/share.sh`) is the alternative for running from your own machine. Both are covered in [deploy/README.md](deploy/README.md).
+- **Cloudflare**: Cloudflare Pages serves the dashboard and forwards `/api/*` through a Pages Function to the agent on Render (`render.yaml`). A Cloudflare Worker on a cron trigger (`deploy/keepwarm`) keeps that agent awake so the public link answers immediately whenever someone opens it. Cloudflare Tunnel (`scripts/share.sh`) is the alternative for running from your own machine. All three are covered in [deploy/README.md](deploy/README.md).
 
 ## Limitations
 

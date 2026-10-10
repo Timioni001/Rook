@@ -36,6 +36,14 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 
 **18:30: no AWS.** The team didn't qualify for the AWS credit, so the Lightsail deploy is gone. The live demo now runs locally and is shared through Cloudflare Tunnel (`scripts/share.sh`). The WSL setup script no longer collides with an existing NodeSource Node install.
 
+**19:56: the Cloudflare Pages build failed.** `Couldn't find any \`pages\` or \`app\` directory`. The Pages project's root directory had never been set to `web`, so the build ran at the repo root: it pip-installed `requirements.txt` for nothing, `npx` found no local Next and downloaded a different major of it, and there was no `app/` to build.
+
+**20:40: the deploy is now hard to get wrong, and the demo stays up.**
+- `scripts/build-pages.sh` installs the pinned dependencies and always builds inside `web/`. It mirrors the export and the `/api` function to the repo root, so the Pages project works with its root directory set to `web` *or* left empty. `.node-version` pins Node 22. Next moved to 14.2.35, the patched release in that line.
+- The `/api` Pages Function retries a sleeping backend, never replays a write, and says what to configure when it has no agent behind it. Checked locally with `wrangler pages dev`: static, authed GET, POST with a body, 401 passthrough, no-origin and dead-agent cases.
+- A Cloudflare Worker on a 5-minute cron (`deploy/keepwarm`) keeps the Render instance from sleeping, so the public link answers at once whenever judging happens. The dashboard also waits out a cold start instead of showing an error.
+- `scripts/deploy-pages.sh` uploads the dashboard straight from WSL if the Git build misbehaves. `scripts/check-live.py` runs a real incident against the live address and prints PASS, including the approval step.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

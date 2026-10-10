@@ -1,0 +1,13 @@
+# Cloudflare Worker on a cron trigger that keeps the Rook agent awake.
+#
+# The free Render plan stops a service after 15 idle minutes, and the next visitor
+# waits about a minute for it to come back. Judges arrive without warning, so this
+# worker calls /api/health every 5 minutes and the agent never goes to sleep.
+#
+#   ROOK_API_ORIGIN=https://<your-service>.onrender.com ../../scripts/deploy-keepwarm.sh
+name = "rook-keepwarm"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[triggers]
+crons = ["*/5 * * * *"]

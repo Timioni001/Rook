@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Graph from './components/Graph'
 import {
-  ACTION_LABEL, ApiError, IDENTITIES, INCIDENT_STATE, PLAYBOOK_COPY, actionState, api, eventText, eventTone, time,
+  ACTION_LABEL, ApiError, IDENTITIES, INCIDENT_STATE, PLAYBOOK_COPY, actionState, api, eventText, eventTone,
+  reachable, time,
 } from './lib'
 
 const Pill = ({ tone, children }: { tone: string; children: React.ReactNode }) =>
@@ -65,6 +66,8 @@ export default function Page() {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [waking, setWaking] = useState(false)
+  const wakeChecks = useRef(0)
   const timer = useRef<any>(null)
   const tl = useRef<HTMLOListElement>(null)
   const nEvents = d?.audit?.length || 0
@@ -74,11 +77,34 @@ export default function Page() {
     try {
       const [m, s, l] = await Promise.all([api(who.token, '/me'), api(who.token, '/scenarios'), api(who.token, '/incidents')])
       setMe(m); setScenarios(s); setList(l); setErr(null)
-    } catch (e: any) { setErr(e.message); setList([]) }
+    } catch (e: any) {
+      // A sleeping host is unreachable, or the /api proxy reports a gateway error on its
+      // behalf. Any other 5xx means the agent is awake and something else is wrong, so
+      // only these are worth waiting out.
+      const asleep = e instanceof ApiError && [0, 502, 503, 504].includes(e.status)
+      if (asleep && wakeChecks.current < 60) setWaking(true)
+      setErr(e.message); setList([])
+    }
   }, [who.token])
 
   // On identity switch keep the open incident; if the new identity can't see it, loadIncident clears it.
   useEffect(() => { setD(null); loadList() }, [loadList])
+
+  // The demo agent runs on a free host that sleeps when nobody is using it, and takes
+  // up to a minute to come back. Wait for it instead of leaving an error on the screen.
+  useEffect(() => {
+    if (!waking) return
+    let stop = false
+    const tick = async () => {
+      if (stop) return
+      // wakeChecks is a ref, so the budget holds across identity switches and cannot loop.
+      if (await reachable()) { if (!stop) { setWaking(false); setErr(null); loadList() }; return }
+      if (++wakeChecks.current < 60 && !stop) setTimeout(tick, 3000)
+      else if (!stop) setWaking(false)
+    }
+    const h = setTimeout(tick, 1200)
+    return () => { stop = true; clearTimeout(h) }
+  }, [waking, loadList])
 
   const loadIncident = useCallback(async (iid: string) => {
     try {
@@ -148,6 +174,14 @@ export default function Page() {
           </label>
         </nav>
 
+        {waking && (
+          <div className="card notice waking" role="status">
+            <b>Starting the agent…</b> The demo agent is hosted on a free plan that sleeps when
+            nobody is using it, so the first visit takes up to a minute. This page keeps checking
+            and starts on its own, no reload needed.
+          </div>
+        )}
+
         <header className="hero" id="top">
           <div className="hero-copy">
             <h1>IT incidents, resolved and proven fixed.</h1>
@@ -187,7 +221,7 @@ export default function Page() {
           <span>sandbox</span><span>mock integrations</span><span>org {me?.org || '…'}</span><span>{me ? me.roles.join(' + ') : 'loading'}</span>
         </p>
 
-        {err && (
+        {err && !waking && (
           <div className="card alert" role="alert">
             <b>Something went wrong.</b> {err}{' '}
             <button className="btn-outline" onClick={() => (id ? loadIncident(id) : loadList())}>Retry</button>
@@ -198,7 +232,7 @@ export default function Page() {
         <section className="section">
           <SectionTitle label="Incidents" text="Each run is stored with its plan, checkpoints and audit trail." />
           {list === null && <p className="muted">Loading…</p>}
-          {list?.length === 0 && <p className="muted">No incidents yet for this organisation. Start one above.</p>}
+          {list?.length === 0 && !waking && <p className="muted">No incidents yet for this organisation. Start one above.</p>}
           <ul className="chips">
             {list?.map((i) => {
               const st = INCIDENT_STATE[i.status] || INCIDENT_STATE.open

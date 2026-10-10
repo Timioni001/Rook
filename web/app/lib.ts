@@ -32,6 +32,17 @@ export async function api<T = any>(token: string, path: string, body?: unknown):
   return data as T
 }
 
+// Is the agent reachable? /api/health needs no token, so this also works before sign-in.
+// A free host that sleeps when idle answers with a gateway error until it has woken up.
+export async function reachable(): Promise<boolean> {
+  try {
+    const r = await fetch('/api/health', { cache: 'no-store' })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
 // Plain-language names for incident and action states.
 export const INCIDENT_STATE: Record<string, { label: string; tone: string; text: string }> = {
   investigating: { label: 'Investigating', tone: 'info', text: 'Rook is gathering evidence.' },

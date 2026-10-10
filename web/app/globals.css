@@ -168,3 +168,13 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .guide p { margin: 4px 0 0; opacity: .85 }
 .guide .btn-outline { background: #fff }
 @media (max-width: 640px) { .guide { grid-template-columns: 1fr; position: static } }
+
+/* Cold-start banner: the agent's free host sleeps when idle, so this sits above the
+   fold and is the first thing a visitor sees until the agent answers. */
+.card.notice.waking { margin: 0 0 18px; position: relative; padding-left: 46px; }
+.card.notice.waking::before {
+  content: ''; position: absolute; left: 24px; top: 1.6em; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--lime); animation: waking-pulse 1.1s ease-in-out infinite;
+}
+@keyframes waking-pulse { 0%, 100% { opacity: .25 } 50% { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .card.notice.waking::before { animation: none; opacity: 1 } }

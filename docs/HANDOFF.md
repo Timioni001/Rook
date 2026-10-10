@@ -33,6 +33,15 @@ An operations agent for growing companies that resolves IT incidents and access 
 
 Going live is described in `deploy/README.md`: Render (`render.yaml`) runs the agent and Cloudflare Pages serves the dashboard, both set up in the browser. `./scripts/share.sh` is the terminal alternative.
 
+```bash
+bash scripts/build-pages.sh                                 # exactly what Cloudflare Pages runs
+python3 scripts/check-live.py https://<project>.pages.dev    # real incident against the live site; prints PASS
+ROOK_API_ORIGIN=https://<svc>.onrender.com ./scripts/deploy-pages.sh      # upload the dashboard directly
+ROOK_API_ORIGIN=https://<svc>.onrender.com ./scripts/deploy-keepwarm.sh   # cron worker, stops Render sleeping
+```
+
+The Pages project must have its root directory set to `web` (build command `npm run build:static`) or left empty (build command `npm run build`); output directory `out` either way. Never `npx next build` -- that is what broke the first production build.
+
 ## Rules for this repo
 
 - No AI-assistant attribution in commits, PR text or code (no co-author lines, no session links, no model names). The exception is Entire records: `.claude/` hooks, `.entire/`, `Entire-Checkpoint` trailers and checkpoints.
@@ -47,7 +56,7 @@ Turn it on locally with `entire enable --agent <your agent>` so new sessions kee
 
 ## Still to do
 
-1. Go live via `deploy/README.md` and record real neatlogs trace links in `evidence/`.
+1. Go live via `deploy/README.md`, run `scripts/check-live.py` against the public address, then record real neatlogs trace links in `evidence/`.
 2. cfo.ai: enter the facts in `evidence/cfo-ai-business-plan.md`, then add the plan's share link there and in the README.
 3. Demo video (about 3 minutes): the outage run, then `outage_wrong_cause` escalating, then the evidence pack.
 4. Build-in-public posts with #neatHack (drafts were made in the project chat).

@@ -16,25 +16,84 @@ This path needs only web pages. **Render** runs the Rook agent from this reposit
 2. Click **New → Blueprint**, then pick the repo. Render reads `render.yaml`.
 3. When it asks for `NEATLOGS_API_KEY`, paste your neatlogs project key. It is stored by Render, never in the repo.
 4. Click **Apply** and wait for the deploy to finish.
-5. Check: open `https://<your-service>.onrender.com/api/health`. It should say `"ok":true`. The full dashboard already works at that address too.
+5. Check: open `https://<your-service>.onrender.com/api/health`. It should say `"ok":true`. The full dashboard already works at that address too, so this alone is a usable demo link.
 
 **B. Cloudflare Pages (the address you share).**
 1. In the Cloudflare dashboard, open **Workers & Pages → Create**. Choose the **Pages** tab ("Import an existing Git repository"), then pick the Rook repo.
-2. Use these build settings:
-   - Production branch: `main`
-   - Framework preset: `None`
-   - Root directory: `web`
-   - Build command: `STATIC_EXPORT=1 npx next build`
-   - Build output directory: `out`
-3. Under **Environment variables**, add:
-   - `ROOK_API_ORIGIN`: the Render address from A5, with no trailing slash
-   - `NODE_VERSION`: `22`
+2. Use these build settings. **The root directory is the one that matters** — getting it wrong is what broke the 2026-10-10 build:
+
+   | Setting | Value |
+   |---|---|
+   | Production branch | `main` |
+   | Framework preset | `None` |
+   | Root directory | `web` |
+   | Build command | `npm run build:static` |
+   | Build output directory | `out` |
+
+   If the root directory field is awkward to reach or you would rather leave it empty, use this instead — it builds the same site from the repo root:
+
+   | Setting | Value |
+   |---|---|
+   | Root directory | *(empty)* |
+   | Build command | `npm run build` |
+   | Build output directory | `out` |
+
+   Both commands run `scripts/build-pages.sh` or the pinned Next directly. Neither uses `npx next build`, which is what pulled the wrong major of Next last time. `.node-version` pins Node 22, so no `NODE_VERSION` variable is needed.
+3. Under **Settings → Environment variables**, add `ROOK_API_ORIGIN`: the Render address from A5, with no trailing slash. (Alternatively set `DEFAULT_API_ORIGIN` at the top of `web/functions/api/[[path]].ts` and commit it, and the project needs no variables at all.)
 4. Click **Save and Deploy**.
-5. Check: open `https://<project>.pages.dev` and run an incident. A trace should appear in neatlogs.
+5. Check it properly, from your terminal, rather than by eye:
+   ```bash
+   python3 scripts/check-live.py https://<project>.pages.dev
+   ```
+   It wakes the agent, loads the dashboard, runs a real incident through to Verified Closure and prints `PASS`. Add `--scenario signature` for the offboarding playbook with the approval step.
+
+**C. Keep it awake, so the link works whenever judging happens.**
+
+The free Render plan stops a service after 15 idle minutes, and the next visitor waits about a minute. One Cloudflare Worker on a cron trigger removes that:
+
+```bash
+ROOK_API_ORIGIN=https://<your-service>.onrender.com ./scripts/deploy-keepwarm.sh
+```
+
+It calls `/api/health` every 5 minutes, costs nothing on the Workers free plan, and keeps the agent warm around the clock. Visit the worker's own address to see what it last saw, or watch it with `(cd deploy/keepwarm && npx wrangler@4 tail)`. Remove it with `npx wrangler@4 delete --name rook-keepwarm`.
+
+Even without it the dashboard copes: it detects a sleeping agent, says "Starting the agent…" and continues on its own once the agent answers, instead of showing an error.
 
 Good to know:
-- The free Render service sleeps after 15 idle minutes. The first visit after that takes about a minute to wake it, so open the link yourself just before judges or a recording.
 - Demo data resets whenever the service restarts. Everything in Rook is synthetic, so nothing is lost.
+- Render's free plan allows about 750 instance-hours a month, which is one service kept warm continuously.
+
+## Deploy the dashboard from your machine instead
+
+If the Cloudflare Git build misbehaves, skip it. This uploads the built site directly, with no dashboard build settings involved:
+
+```bash
+ROOK_API_ORIGIN=https://<your-service>.onrender.com ./scripts/deploy-pages.sh
+```
+
+It builds the dashboard, stores `ROOK_API_ORIGIN` on the Pages project, and uploads `web/out` together with the `/api` proxy function. The first run signs you in to Cloudflare in a browser; `CLOUDFLARE_API_TOKEN` (with "Cloudflare Pages: Edit") skips that. Set `CF_PAGES_PROJECT` if the project is not called `rook`.
+
+## When a Cloudflare Pages build fails
+
+The build log says what went wrong. The failure on 2026-10-10 looked like this:
+
+```
+Installing project dependencies: pip install -r requirements.txt
+Executing user build command: STATIC_EXPORT=1 npx next build
+npm warn exec The following package was not found and will be installed: next@16.4.0
+The module 'react' was not found...
+Error: > Couldn't find any `pages` or `app` directory.
+```
+
+Read it as: the build ran at the repo root, not in `web/`. There is no `app/` directory there, `web/node_modules` was never installed, and `npx` therefore downloaded a newer major of Next instead of the pinned one. The fix is the root directory and build command in the table above. Checks that catch this before pushing:
+
+```bash
+bash scripts/build-pages.sh                  # exactly what Cloudflare runs
+cd web && npx wrangler@4 pages dev out \
+  --binding ROOK_API_ORIGIN=http://localhost:8000   # the Pages site and /api proxy, locally
+```
+
+---
 
 The terminal steps below still work if you'd rather run Rook on your own machine.
 
