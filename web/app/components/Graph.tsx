@@ -40,7 +40,7 @@ export default function Graph({ graph, live }: { graph: { nodes: Node[]; edges: 
         </desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)" />
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--ink)" />
           </marker>
         </defs>
         {graph.edges.map((e, i) => {
@@ -52,7 +52,7 @@ export default function Graph({ graph, live }: { graph: { nodes: Node[]; edges: 
           return (
             <g key={i}>
               <path d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}`} fill="none"
-                stroke="var(--line-strong)" strokeWidth="1.2" markerEnd="url(#arrow)" />
+                stroke="var(--ink)" strokeWidth="1.2" markerEnd="url(#arrow)" />
               {e.rel !== 'has account' && <text x={mx} y={(y1 + y2) / 2 - 4} textAnchor="middle" className="edge-label">{e.rel}</text>}
             </g>
           )
