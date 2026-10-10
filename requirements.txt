@@ -4,4 +4,4 @@ pydantic>=2
 pytest
 httpx
 neatlogs>=1.4
-anthropic   # optional: only if ROOK_PLANNER=llm
+# anthropic   # optional: install only if ROOK_PLANNER=llm

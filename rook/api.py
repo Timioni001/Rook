@@ -9,11 +9,12 @@ incident from another organisation is indistinguishable from one that does not e
 
 The adapters behind this API are sandboxed mocks with synthetic credentials.
 """
-import hashlib, hmac, json, os, re, threading, time
+import hashlib, hmac, json, os, pathlib, re, threading, time
 from contextlib import asynccontextmanager
 from typing import Literal, Optional
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from . import obs
 from .domain import Principal
@@ -65,7 +66,7 @@ def load_tokens():
     return {}
 
 
-def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate_limit=60):
+def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate_limit=30, read_rate_limit=900):
     db_path = db_path or os.getenv("KEYWARDEN_DB", "keywarden.db")
     step_delay = float(os.getenv("KEYWARDEN_STEP_DELAY", "0.6")) if step_delay is None else step_delay
     principals = {_h(t): Principal(**p) for t, p in (tokens if tokens is not None else load_tokens()).items()}
@@ -115,12 +116,15 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
             raise HTTPException(401, "invalid token", headers={"WWW-Authenticate": "Bearer"})
         return match
 
-    def limited(p: Principal = Depends(principal)) -> Principal:
+    def limited(request: Request, p: Principal = Depends(principal)) -> Principal:
+        """Per-principal sliding window: tight for changes, loose for reads (the dashboard polls)."""
+        write = request.method != "GET"
+        key, limit = (f"w:{p.id}", rate_limit) if write else (f"r:{p.id}", read_rate_limit)
         now = time.time()
-        window = [t for t in hits.get(p.id, []) if now - t < 60]
-        if len(window) >= rate_limit:
+        window = [t for t in hits.get(key, []) if now - t < 60]
+        if len(window) >= limit:
             raise HTTPException(429, "too many requests")
-        hits[p.id] = window + [now]
+        hits[key] = window + [now]
         return p
 
     def need(p: Principal, role: str):
@@ -250,4 +254,8 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
             start_run(iid)
         return {"action": a.id, "status": a.status.value}
 
+    # Single-container deploys: serve the statically exported dashboard from the same origin.
+    static = pathlib.Path(os.getenv("KEYWARDEN_STATIC", pathlib.Path(__file__).parent.parent / "web" / "out"))
+    if static.is_dir():
+        app.mount("/", StaticFiles(directory=static, html=True), name="dashboard")
     return app
