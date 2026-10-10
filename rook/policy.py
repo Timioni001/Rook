@@ -10,7 +10,7 @@ and again immediately before each action executes, against live state.
 ROOK_PRINCIPAL = "svc-rook"
 
 CARE_ACTIONS = {"resend_referral", "book_appointment", "contact_patient", "notify_clinician",
-                "close_loop", "resend_prescription"}
+                "close_loop", "resend_prescription", "move_appointment"}
 
 ALLOWED = {
     "disable_account": {"github", "cloud", "pm"},
@@ -27,11 +27,17 @@ ALLOWED = {
     "notify_clinician": {"records"},
     "close_loop": {"records"},
     "resend_prescription": {"pharmacy"},
+    "move_appointment": {"schedule"},
 }
 KNOWN_GOOD_MINUTES = 60      # a revision must have run healthy this long to be rolled back to unattended
 # Revoking a key is irreversible. Contacting a patient reaches a person outside the building and
 # cannot be taken back either, so both wait for someone accountable.
 NEEDS_APPROVAL = {"revoke_credential", "contact_patient"}
+
+
+def _care_record(sb, target):
+    """A care action points either at something the clinic ordered, or at an appointment."""
+    return sb.records.order(target) or sb.schedule.appointment(target)
 
 
 def owner_of(sb, a):
@@ -47,9 +53,9 @@ def owner_of(sb, a):
             sb.cloud.deployment(a.target)
             return f"cloud:{a.target}"
         if a.type in CARE_ACTIONS:
-            # Scoped to the clinic whose sweep this is. R10 then pins each action to the patient
-            # named on its own order, so one patient's follow-up can never touch another's.
-            return f"clinic:{sb.records.clinic()}" if sb.records.order(a.target) else None
+            # Scoped to the clinic this incident is about. R10 then pins each action to the patient
+            # named on its own record, so one person's care can never be changed under another's.
+            return f"clinic:{sb.records.clinic()}" if _care_record(sb, a.target) else None
     except KeyError:
         return None
 
@@ -109,9 +115,9 @@ def decide(a, inc, sb, plan, approval=None):
                     "R4-safe-order")
 
     if a.type in CARE_ACTIONS:
-        o = sb.records.order(a.target)
+        o = _care_record(sb, a.target)
         if o is None:
-            return "blocked", "That order does not exist.", "R3-dependency"
+            return "blocked", "That record does not exist.", "R3-dependency"
         if a.params.get("patient") and a.params["patient"] != o["patient"]:
             return ("blocked", "This action names a different patient than the order it belongs to.",
                     "R10-patient-match")

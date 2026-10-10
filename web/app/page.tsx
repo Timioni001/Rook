@@ -11,6 +11,7 @@ const PLAYBOOK_NAME: Record<string, string> = {
   outage: 'Service outage',
   leak: 'Leaked credential',
   care: 'Care follow-up',
+  cover: 'Doctor off sick',
 }
 
 const Pill = ({ tone, children }: { tone: string; children: React.ReactNode }) =>
@@ -60,8 +61,8 @@ export default function Page() {
   const [who, setWho] = useIdentity()
   const [me, setMe] = useState<any>(null)
   const [scenarios, setScenarios] = useState<any[]>([])
-  const [scenario, setScenario] = useState('signature')
-  const [playbook, setPlaybook] = useState('offboarding')
+  const [scenario, setScenario] = useState('cover_clean')
+  const [playbook, setPlaybook] = useState('cover')
   const pickPlaybook = (k: string) => {
     setPlaybook(k)
     const first = scenarios.find((s) => s.playbook === k)
@@ -192,8 +193,12 @@ export default function Page() {
 
         <header className="hero" id="top">
           <div className="hero-copy">
-            <h1>IT incidents, resolved and proven fixed.</h1>
-            <p>Rook is an operations agent for growing companies. It investigates across your systems, fixes in a safe order, recovers when a step fails, and closes an incident only after independent checks pass.</p>
+            <h1>The problems that fall between your systems.</h1>
+            <p>Rook connects to the software a company already runs. Staff report a problem, Rook works out what is
+              really going on across every system it touches, proposes a fix, waits for a person to approve anything
+              that affects someone outside the building, then checks the result and shows the proof. It does not
+              replace your appointment book or your accounting software. It does the chasing and coordinating that
+              otherwise lands on a member of staff.</p>
             <div className="hero-form">
               <span className="mono small">Incident type</span>
               <div className="row playbooks" role="group" aria-label="Incident type">
@@ -475,10 +480,27 @@ export default function Page() {
             <section className="section">
               <div className="soft cta">
                 <div>
-                  <h2 className="h3">Try one of two incidents</h2>
-                  <p><b>Access &amp; offboarding:</b> a contractor left but their API key still runs two services. A config API fails once mid-fix; Rook checkpoints, inspects what really happened, retries safely and closes with evidence.</p>
-                  <p><b>Service outage:</b> checkout-api broke right after a deploy. Rook pauses the pipeline so it can’t redeploy the bad change, rolls back, confirms customers can check out, and turns the pipeline back on with the bad revision blocked.</p>
-                  <p><b>Leaked credential:</b> a scanner finds a live API key committed to an internal repo. Rook proves it still works, finds the two services using it, rotates and verifies each one, revokes the old key and cleans the file. If the key is already dead it refuses to rotate it, and if it cannot tell who owns it, it refuses to touch it at all.</p>
+                  <h2 className="h3">What a company is actually buying</h2>
+                  <ul className="facts">
+                    <li>One place to see the problems nobody has finished yet.</li>
+                    <li>Connections into the software the company already runs.</li>
+                    <li>An agent that works out what happened and coordinates the fix across all of them.</li>
+                    <li>Approval on anything sensitive, a full audit trail, and proof the work actually landed.</li>
+                  </ul>
+                  <p className="small muted">Rook does not replace a clinic\u2019s appointment book or a company\u2019s
+                    accounting software. It works across them, on the problems that otherwise need a person to chase
+                    information and coordinate a fix by hand.</p>
+                  <h3 className="h4" style={{ marginTop: 18 }}>Try one</h3>
+                  <p><b>A doctor calls in sick:</b> twelve people are booked in and none of them know. Rook finds who
+                    is affected, finds colleagues with room, moves each appointment and tells each person. Anyone it
+                    cannot reach is left exactly where they are and handed to reception, because moving someone who
+                    will not hear about it is worse than leaving it alone.</p>
+                  <p><b>Things marked done that never happened:</b> a referral, a test result and a prescription the
+                    record calls finished. Rook asks the clinic, the pharmacy and the doctor they were meant to
+                    reach. Three of the four never happened. The fourth really did, so Rook says so and leaves it.</p>
+                  <p><b>The same engine on infrastructure:</b> a contractor\u2019s API key still running two services,
+                    a service failing right after a change, a live key found in a repository. Same investigate,
+                    approve, verify, prove.</p>
                 </div>
                 <Star big />
               </div>
@@ -486,7 +508,7 @@ export default function Page() {
           )}
         </div>
 
-        <footer className="footer mono small">Rook · the operations agent that proves the fix · built by Keywarden · sandboxed mock integrations, synthetic credentials only</footer>
+        <footer className="footer mono small">Rook · the operations agent that proves the fix · built by Keywarden · every connected system here is a sandboxed mock with synthetic data</footer>
       </div>
     </div>
   )
@@ -494,10 +516,10 @@ export default function Page() {
 
 function HowItWorks() {
   const steps = [
-    ['Investigate', 'Rook reads every connected system and maps what is affected. Nothing is changed yet.'],
-    ['Plan', 'It writes the fix as ordered steps, plus the checks that must pass before it can call the incident closed.'],
-    ['Fix safely', 'Each step is checked against company rules. Risky ones wait for a person. Failures are inspected, not blindly retried.'],
-    ['Prove it', 'Independent checks confirm the fix really worked. If they fail, Rook says so and hands over to a person.'],
+    ['A problem comes in', 'A doctor calls in sick, an order is late, someone leaves. Staff raise it, or a connected system does.'],
+    ['Rook investigates', 'It reads every system the problem touches and works out who and what is actually affected. Nothing is changed yet.'],
+    ['Staff approve', 'Rook proposes the fix as ordered steps. Anything that reaches a person outside the building waits for someone to say yes.'],
+    ['Rook proves it', 'It checks the result against the systems themselves. Whatever it could not finish stays open, named, and with the reason.'],
   ]
   return (
     <ol className="how" aria-label="How Rook works">

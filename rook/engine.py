@@ -36,6 +36,7 @@ TOOL_DOCS = {
     "notify_clinician": "Page the clinician responsible for the order",
     "close_loop": "Mark the referral loop closed in the record",
     "resend_prescription": "Send a prescription to the pharmacy again",
+    "move_appointment": "Move an appointment to another doctor and time",
 }
 # What undoing each action would take, shown to approvers and reviewers.
 UNDO = {
@@ -53,6 +54,7 @@ UNDO = {
     "notify_clinician": "No, and it should not be. A page to a clinician stands.",
     "close_loop": "Yes. The record can be reopened.",
     "resend_prescription": "Yes. The prescription can be cancelled with the pharmacy.",
+    "move_appointment": "Yes. The appointment can be moved back if the slot is still free.",
 }
 
 
@@ -489,6 +491,8 @@ class Engine:
             return self.sb.records.close_loop(a.target, a.idem_key)
         if a.type == "resend_prescription":
             return self.sb.pharmacy.send(a.target, a.idem_key)
+        if a.type == "move_appointment":
+            return self.sb.schedule.move(a.target, p["to_doctor"], p["to_time"], a.idem_key)
         raise Permanent("unsupported action")
 
     # ---- compensation: undo a dependent update that broke the service ----

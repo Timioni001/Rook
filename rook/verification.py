@@ -126,6 +126,25 @@ def _loop_closed_in_record(sb, a):
     return done, {"loop_closed": done}
 
 
+def _appointment_moved(sb, a):
+    ap = sb.schedule.appointment(a["appointment"])
+    ok = bool(ap) and ap["status"] == "booked" and ap["doctor"] != a["from_doctor"]
+    return ok, {"now_with": sb.schedule.doctor_name(ap["doctor"]) if ap else None,
+                "at": ap["at"] if ap else None}
+
+
+def _no_double_booking(sb, a):
+    clashes = sb.schedule.double_booked()
+    return not clashes, {"clashes": clashes}
+
+
+def _session_cleared(sb, a):
+    """Nobody is still booked in with a doctor who is not coming in."""
+    left = sb.schedule.booked_with(a["doctor"])
+    return not left, {"still_booked": [{"appointment": k, "patient": v["patient"], "at": v["at"]}
+                                       for k, v in sorted(left.items())]}
+
+
 def _prescription_at_pharmacy(sb, a):
     there = sb.pharmacy.has(a["order"])
     return there, {"at_pharmacy": there, "dispensed": sb.pharmacy.dispensed(a["order"])}
@@ -158,6 +177,9 @@ OBSERVERS = {
     "leak_attributed": _leak_attributed,
     "referral_received": _referral_received,
     "prescription_at_pharmacy": _prescription_at_pharmacy,
+    "appointment_moved": _appointment_moved,
+    "no_double_booking": _no_double_booking,
+    "session_cleared": _session_cleared,
     "appointment_booked": _appointment_booked,
     "patient_reached": _patient_reached,
     "clinician_notified": _clinician_notified,
@@ -283,6 +305,10 @@ CONTROLS = {
     "clinician_acknowledged": ("Urgent results", "Patient safety",
                                "A doctor has taken responsibility for the result"),
     "loop_closed_in_record": ("Care follow-up", "Patient safety", "The record matches what really happened"),
+    "appointment_moved": ("Care continuity", "Patient safety", "The appointment is with a doctor who is in"),
+    "no_double_booking": ("Care continuity", "Patient safety", "No two people were put in the same slot"),
+    "session_cleared": ("Care continuity", "Patient safety",
+                        "Nobody is left booked with a doctor who is not coming in"),
 }
 
 
@@ -367,6 +393,35 @@ def care_conditions(rel):
     return conds
 
 
+def cover_conditions(rel):
+    """What has to be true before a sick doctor's list can be called sorted."""
+    conds = []
+    off = next(r for r in rel if r["rel"] == "absence")
+    for m in (r for r in rel if r["rel"] == "booking"):
+        if not m["movable"]:
+            continue
+        conds.append(Condition(
+            id=f"{m['appointment']}-moved",
+            description=f"{m['patient_name']} is booked with a doctor who is actually in",
+            expected="the appointment is with someone other than the absent doctor",
+            method="appointment_moved", args={"appointment": m["appointment"], "from_doctor": off["doctor"]}))
+        conds.append(Condition(
+            id=f"{m['appointment']}-told",
+            description=f"{m['patient_name']} has replied, so she knows the time changed",
+            expected="a message was delivered and answered", method="patient_reached",
+            args={"patient": m["patient"]}))
+    conds.append(Condition(
+        id="no-double-booking", description="Nobody was put into a slot that was already taken",
+        expected="no two booked appointments share a doctor and a time",
+        method="no_double_booking", args={}))
+    conds.append(Condition(
+        id="session-cleared",
+        description=f"Nobody is still booked in with {off['doctor_name']}, who is not coming in",
+        expected="the absent doctor's list is empty", method="session_cleared",
+        args={"doctor": off["doctor"]}))
+    return conds
+
+
 def evaluate(sb, conds):
     out = []
     for c in conds:
@@ -423,6 +478,9 @@ def checks_for(a):
         return [("loop_closed_in_record", {"order": a.target})]
     if a.type == "resend_prescription":
         return [("prescription_at_pharmacy", {"order": a.target})]
+    if a.type == "move_appointment":
+        return [("appointment_moved", {"appointment": a.target, "from_doctor": p["from_doctor"]}),
+                ("no_double_booking", {})]
     return None
 
 
@@ -469,6 +527,9 @@ def applied(sb, a):
             return sb.records.loop_closed(a.target)
         if a.type == "resend_prescription":
             return sb.pharmacy.has(a.target)
+        if a.type == "move_appointment":
+            ap = sb.schedule.appointment(a.target)
+            return bool(ap) and ap["doctor"] == p["to_doctor"] and ap["at"] == p["to_time"]
     except Exception:
         return None
     return None

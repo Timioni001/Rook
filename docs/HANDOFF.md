@@ -4,7 +4,7 @@ Read this first when picking the build up in a new coding session. Deadline: **M
 
 ## What Rook is
 
-An operations agent for growing companies that resolves IT incidents and access tasks, then proves the fix held ("Verified Closure"). Every run goes through the same steps: investigate, define closure conditions, plan, policy check, execute in a safe order, reconcile, verify, then close or escalate.
+A web application a company connects to the software it already runs. Staff report a problem in one dashboard; Rook investigates across every connected system, proposes a fix, waits for approval on anything that reaches someone outside the building, then proves the result held ("Verified Closure"). It works across existing systems rather than replacing any of them. Every run goes through the same steps: investigate, define closure conditions, plan, policy check, execute in a safe order, reconcile, verify, then close or escalate.
 
 | Playbook | Trigger | Key scenarios |
 |---|---|---|
@@ -12,6 +12,7 @@ An operations agent for growing companies that resolves IT incidents and access 
 | Service outage | a monitoring alert | `outage`, `outage_clean`, `outage_wrong_cause`, `outage_rollback_down` |
 | Leaked credential | a secrets-scanner finding | `leak`, `leak_clean`, `leak_already_revoked`, `leak_unattributed` |
 | Care follow-up | a check of what a clinic says it finished | `referral_clean`, `referral`, `referral_critical`, `referral_unreachable` |
+| Doctor off sick | a doctor marked unavailable with patients booked in | `cover_clean`, `cover`, `cover_short`, `cover_unreachable` |
 
 ## Map of the code
 
@@ -30,7 +31,7 @@ An operations agent for growing companies that resolves IT incidents and access 
 ```bash
 ./scripts/setup-wsl.sh        # once: Node 22, uv + Python 3.13 venv (neatlogs needs < 3.14), npm ci, cloudflared
 ./scripts/dev.sh              # API :8000 + dashboard http://localhost:3000
-.venv/bin/pytest -q           # 105 tests
+.venv/bin/pytest -q           # 112 tests
 .venv/bin/python -m rook.demo --scenario outage
 ```
 

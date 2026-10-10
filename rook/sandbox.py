@@ -59,17 +59,59 @@ SCENARIOS = {
                           "and Rook will not touch it", {}, {"referral_critical": True}),
     "referral_unreachable": ("Every phone number on file for the patient is out of date, so she cannot "
                              "be told", {}, {"referral_unreachable": True}),
+    # a doctor calls in sick and their whole list has to be moved
+    "cover": ("The appointment book rejects one move, then accepts it",
+              {"schedule.move": ["transient"]}, {"doctor_off": "clin-okafor"}),
+    "cover_clean": ("A doctor calls in sick with 12 people booked in. No injected faults", {},
+                    {"doctor_off": "clin-okafor"}),
+    "cover_short": ("Only four colleagues' slots are free, so most of the list cannot be moved at all", {},
+                    {"doctor_off": "clin-okafor", "slots_short": 4}),
+    "cover_unreachable": ("One patient's phone number is out of date, so Rook will not move her appointment "
+                          "without telling her", {},
+                          {"doctor_off": "clin-okafor", "patient_unreachable": "pat-05"}),
 }
 SCENARIO_PLAYBOOK = {k: "outage" for k in SCENARIOS if k.startswith("outage")}
 SCENARIO_PLAYBOOK |= {k: "leak" for k in SCENARIOS if k.startswith("leak")}
 SCENARIO_PLAYBOOK |= {k: "care" for k in SCENARIOS if k.startswith("referral")}
+SCENARIO_PLAYBOOK |= {k: "cover" for k in SCENARIOS if k.startswith("cover")}
 
 
 def playbook_of(scenario):
     return SCENARIO_PLAYBOOK.get(scenario or "", "offboarding")
 
 
+# A single clinic day: one doctor's list, and the colleagues who could absorb it.
+DAY = "2026-10-12"
+_PEOPLE = [
+    ("Amara Chukwu", "09:00", "Blood pressure review"), ("Tomas Varga", "09:20", "Knee pain, follow-up"),
+    ("Mei Lin Chan", "09:40", "Asthma review"), ("Yusuf Demir", "10:00", "Diabetes check"),
+    ("Sofia Rossi", "10:20", "Rash, second visit"), ("Kwame Mensah", "10:40", "Back pain"),
+    ("Hana Kovac", "11:00", "Thyroid results"), ("Diego Morales", "11:20", "Chest infection follow-up"),
+    ("Priya Raman", "14:00", "Migraine review"), ("Noah Fischer", "14:20", "Ankle sprain"),
+    ("Leila Haddad", "14:40", "Anxiety follow-up"), ("Sam Okonkwo", "15:00", "Medication review"),
+]
+
+
+def _clinic_day():
+    """Twelve people booked in with one doctor, and two colleagues with room to take them."""
+    patients, appts = {}, {}
+    for i, (name, at, reason) in enumerate(_PEOPLE, start=1):
+        pid = f"pat-{i:02d}"
+        patients[pid] = {"name": name, "born": "",
+                         "channels": [{"kind": "text message", "value": f"mobile ending {1000 + i * 7}",
+                                       "status": "active"}],
+                         "opted_out": []}
+        appts[f"ap-{i:02d}"] = {"patient": pid, "doctor": "clin-okafor", "at": f"{DAY}T{at}:00Z",
+                                "status": "booked", "reason": reason}
+    # Two colleagues, with free slots at roughly the same times.
+    free = {"clin-bauer": [f"{DAY}T{t}:00Z" for t in
+                           ("09:10", "09:30", "09:50", "10:10", "10:30", "10:50", "11:10")],
+            "clin-ndiaye": [f"{DAY}T{t}:00Z" for t in ("14:10", "14:30", "14:50", "15:10", "15:30")]}
+    return patients, appts, free
+
+
 def seed() -> dict:
+    _day_patients, _day_appts, _day_free = _clinic_day()
     return {
         "directory": {   # identity provider, read via the internal app
             "ident-jdoe": {"name": "Jordan Doe", "type": "contractor", "employer": "Northwind Consulting",
@@ -134,6 +176,7 @@ def seed() -> dict:
             "clinic": "northside",
             "clinicians": {"clin-okafor": {"name": "Dr Ada Okafor", "pager": "pg-okafor", "status": "on duty"}},
             "patients": {
+                **_day_patients,
                 "pat-alvarez": {"name": "Maria Alvarez", "born": "1968-03-11",
                                 # the number on file is the one she changed last year
                                 "channels": [{"kind": "text message", "value": "mobile ending 0102", "status": "stale"},
@@ -188,6 +231,15 @@ def seed() -> dict:
             "appointments": {"appt-0": {"patient": "pat-rivera", "specialty": "dermatology",
                                         "at": "2026-10-18T09:30:00Z", "status": "booked", "order": "ord-7744"}},
         },
+        # The day's list: who is booked in with whom, and who could cover.
+        "schedule": {
+            "doctors": {"clin-okafor": {"name": "Dr Ada Okafor", "available": True},
+                        "clin-bauer": {"name": "Dr Jonas Bauer", "available": True},
+                        "clin-ndiaye": {"name": "Dr Awa Ndiaye", "available": True}},
+            "appointments": _day_appts,
+            "free_slots": _day_free,
+            "off_today": [],
+        },
         "pharmacy": {"received": [], "dispensed": []},   # the pharmacy never got ord-7743
         "outreach": {"messages": [{"patient": "pat-rivera", "kind": "text message", "value": "mobile ending 0455",
                                    "delivered": True, "responded": True}]},
@@ -203,6 +255,19 @@ def _apply_seed_flags(s):
     if s["flags"].get("leak_already_revoked"):
         for v in s["vault"]["credentials"]["cred-reports"]["versions"]:
             v["status"] = "revoked"
+    off = s["flags"].get("doctor_off")
+    if off:
+        s["schedule"]["off_today"] = [off]
+        s["schedule"]["doctors"][off]["available"] = False
+    if s["flags"].get("slots_short"):
+        keep = s["flags"]["slots_short"]
+        pool = [(d, t) for d, ts in s["schedule"]["free_slots"].items() for t in ts][:keep]
+        s["schedule"]["free_slots"] = {d: [] for d in s["schedule"]["free_slots"]}
+        for d, t in pool:
+            s["schedule"]["free_slots"][d].append(t)
+    if s["flags"].get("patient_unreachable"):
+        for c in s["records"]["patients"][s["flags"]["patient_unreachable"]]["channels"]:
+            c["status"] = "stale"
     if s["flags"].get("referral_critical"):
         o = s["records"]["orders"]["ord-7742"]
         o["urgency"] = "critical"
@@ -553,6 +618,60 @@ class Booking(Adapter):
         return self.core.mutate("booking.book", idem, fn)
 
 
+class Schedule(Adapter):
+    """Adapter 9: the clinic's own appointment book."""
+    def doctors(self):
+        return self.s["schedule"]["doctors"]
+
+    def doctor_name(self, did):
+        return self.doctors().get(did, {}).get("name", did)
+
+    def off_today(self):
+        return list(self.s["schedule"]["off_today"])
+
+    def appointments(self):
+        return self.s["schedule"]["appointments"]
+
+    def appointment(self, aid):
+        return self.appointments().get(aid)
+
+    def booked_with(self, did):
+        return {aid: a for aid, a in self.appointments().items()
+                if a["doctor"] == did and a["status"] == "booked"}
+
+    def free_slots(self, did=None):
+        f = self.s["schedule"]["free_slots"]
+        return f.get(did, []) if did else f
+
+    def cover_options(self, did):
+        """Which other doctors are in today and have room."""
+        return {d: list(sl) for d, sl in self.free_slots().items()
+                if d != did and self.doctors().get(d, {}).get("available") and sl}
+
+    def double_booked(self):
+        seen, clashes = {}, []
+        for aid, a in self.appointments().items():
+            if a["status"] != "booked":
+                continue
+            key = (a["doctor"], a["at"])
+            if key in seen:
+                clashes.append({"doctor": a["doctor"], "at": a["at"], "appointments": [seen[key], aid]})
+            seen[key] = aid
+        return clashes
+
+    def move(self, aid, to_doctor, to_time, idem):
+        def fn():
+            a = self.appointments()[aid]
+            slots = self.s["schedule"]["free_slots"].get(to_doctor, [])
+            if to_time not in slots:
+                raise Permanent("that slot is no longer free")
+            slots.remove(to_time)
+            self.s["schedule"]["free_slots"].setdefault(a["doctor"], []).append(a["at"])
+            a["doctor"], a["at"] = to_doctor, to_time
+            return {"appointment": aid, "doctor": to_doctor, "at": to_time}
+        return self.core.mutate("schedule.move", idem, fn)
+
+
 class Pharmacy(Adapter):
     """Adapter 8: the pharmacy. "Sent to pharmacy" in the record is not the same as the pharmacy having it."""
     def has(self, oid):
@@ -615,6 +734,7 @@ class Sandbox:
         self.booking = Booking(self)
         self.outreach = Outreach(self)
         self.pharmacy = Pharmacy(self)
+        self.schedule = Schedule(self)
 
     @staticmethod
     def _seeded(failures=None, flags=None, scenario=None):

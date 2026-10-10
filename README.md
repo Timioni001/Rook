@@ -2,19 +2,30 @@
 
 **The operations agent that proves the fix.**
 
-Most incident agents stop at a recommendation. They stop there for a stated reason: nobody can prove the fix worked, so acting is too risky. Rook closes that loop. It acts, then proves the result against the live systems, and closes an incident only when the evidence holds.
+Rook is a web application a company connects to the software it already runs. Staff report a problem in one dashboard, Rook works out what is really going on across every system it touches, proposes a fix, waits for a person to approve anything that reaches someone outside the building, then checks the result against those systems and shows the proof. Anything it could not finish stays open, named, with the reason.
 
-Rook is B2B software for growing companies. It automates the operational incidents that today need IT, security or operations people to investigate, then coordinate fixes across several systems. Rook investigates, acts in a safe order, recovers when a step fails, and checks the result independently. It closes an incident only when evidence shows every closure condition holds. We call this **Verified Closure**. Rook is built by the Keywarden team.
+It does not replace a clinic's appointment book or a company's accounting software. It works across them, on the problems that otherwise need an employee to chase information and coordinate a fix by hand.
 
-> Every integration in this repository is a **sandboxed mock** with synthetic credentials (`sk_test_SYNTH_*`). This is a hackathon build for neatHack 2026 and is not production-ready.
+**What a company is buying**
+
+- One place to see the problems nobody has finished yet.
+- Connections into the software it already runs.
+- An agent that investigates and coordinates the work across all of them.
+- Approval controls, an audit trail, and proof the work actually landed.
+
+Most agents in this space stop at a recommendation, and say why: nobody can prove the fix worked. Rook closes that gap. An incident closes only when independent checks pass on the live systems. We call this **Verified Closure**. Rook is built by the Keywarden team.
+
+> Every system Rook connects to in this repository is a **sandboxed mock** with synthetic data and synthetic credentials (`sk_test_SYNTH_*`). No real patient, clinic, repository or cloud account is touched. This is a hackathon build for neatHack 2026 and is not production-ready.
 
 ## Who it is for
 
-| Customer | Typical incidents | Rook today |
+| Customer | The problems they lose people to | Rook today |
 |---|---|---|
-| Startups and SMEs | Employee and contractor offboarding, access management, routine IT incidents | **Access & offboarding** and **Leaked credential** playbooks |
-| Mid-sized companies | Cloud outages, service recovery, compliance checks | **Service outage** playbook |
-| Larger enterprises | Complex incident response across many connected systems | Same engine; more playbooks and real connectors |
+| Small and mid-sized clinics | A doctor off sick and a day of appointments to move; referrals, results and prescriptions marked done that never happened | **Doctor off sick** and **Care follow-up** playbooks |
+| Growing companies | Leavers whose access lives on, leaked keys, services failing after a change | **Access & offboarding**, **Leaked credential** and **Service outage** playbooks |
+| Any business with several systems | An order delayed between order management, inventory and delivery; anything where staff chase information across tools | Same engine; a new playbook plus the connectors it needs |
+
+First version targets small and mid-sized clinics with one complete workflow. Real connectors where feasible, sandbox adapters for the demo.
 
 We start with IT incident resolution and access management for growing companies. There's a clear buyer (the head of IT or ops), a problem they recognise, and a demo that shows Rook acting, recovering and verifying.
 
@@ -27,6 +38,7 @@ The engine is the same for every incident: investigate, define closure, plan, au
 | **Access & offboarding** | A completed offboarding ticket | Disables leftover accounts, issues a replacement key, moves every service onto it, revokes the old key (with approval), and removes the leaked key from code | 13 |
 | **Service outage** | A monitoring alert | Ties the alert to the deploy that caused it, pauses auto-deploy, rolls back to a known-good revision, checks that customers can check out, then resumes the pipeline with the bad revision blocked | 7 |
 | **Leaked credential** | A secrets-scanner finding | Probes whether the leaked key still works, attributes it to an owner, finds every service using it, rotates and verifies each one, revokes the old key and clears the file | 3 to 11 |
+| **Doctor off sick** | A doctor marked unavailable with patients booked in | Finds everyone affected, finds colleagues with room, moves each appointment, tells each person, and checks nobody was double-booked or left with a doctor who is not coming in. Anyone it cannot reach is left where they are and handed to reception | 2 per patient, plus 2 for the day |
 | **Care follow-up** | A check of what a clinic says it has finished | Goes through every referral, result and prescription the record calls done, asks the clinic, pharmacy or doctor it was meant to reach, puts right the ones that never happened, and refuses to let the record say done while anything is missing | 13 |
 
 ## Old problems, and how Rook handles each
@@ -126,7 +138,7 @@ docker build -t rook . && docker run --rm -p 8000:8000 rook   # http://localhost
 ### Tests and checks
 
 ```bash
-python -m pytest -q                      # 105 tests
+python -m pytest -q                      # 112 tests
 cd web && npm ci && npx tsc --noEmit && npm run build:static
 bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 ```
@@ -137,6 +149,7 @@ Access & offboarding: `signature`, `clean`, `ambiguous_applied`, `ambiguous_lost
 Service outage: `outage` (the rollback times out but did land), `outage_clean`, `outage_wrong_cause` (the rollback doesn't fix it), `outage_rollback_down`.
 Leaked credential: `leak` (a config API fails once mid-rotation), `leak_clean`, `leak_already_revoked` (the key is already dead, so Rook refuses to rotate it), `leak_unattributed` (the key matches no credential, so Rook refuses to touch it).
 Care follow-up: `referral_clean`, `referral` (the booking system fails once), `referral_critical` (one result is urgent, so Rook alerts a doctor and touches nothing else), `referral_unreachable` (the patient cannot be contacted, so Rook refuses to mark it done).
+Doctor off sick: `cover_clean` (12 appointments, all moved and everyone told), `cover` (one move fails and is reconciled), `cover_short` (only four slots free, so eight stay open for reception), `cover_unreachable` (one patient has no working number, so Rook leaves her appointment alone).
 They are listed in `rook/sandbox.py:SCENARIOS`. Failures are injected deterministically per operation.
 
 ## Architecture
@@ -147,7 +160,7 @@ web/ (Next.js)  ──/api proxy──▶  rook/api.py (FastAPI, bearer auth, or
                                      ▼
                           rook/engine.py  Rook: investigate → conditions → plan → policy
                           │      │        → execute → reconcile → verify → close/escalate
-                          │   rook/playbooks.py  offboarding, outage, leaked credential, care follow-up
+                          │   rook/playbooks.py  doctor off sick, care follow-up, offboarding, outage, leaked key
              rook/policy.py  rook/verification.py (independent observers)
                           │
                 rook/sandbox.py  five stateful mock adapters, idempotency, failure injection
@@ -180,6 +193,6 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 - Demo bearer tokens are built in for local use. Set `KEYWARDEN_TOKENS` (JSON) and `KEYWARDEN_DEMO_TOKENS=0` anywhere shared.
 - There is a single shared sandbox, so only one incident runs at a time.
 - The optional model planner (`ROOK_PLANNER=llm`) covers the offboarding playbook and only proposes actions. Ordering, policy and verification stay deterministic.
-- Four playbooks so far. Each new incident type is a new playbook plus the adapter operations it needs.
-- The care playbook is administrative only. Rook chases paperwork and contacts people; it never reads a result clinically or decides care, and anything urgent goes straight to a doctor. All patients, clinics and records in it are synthetic.
+- Five playbooks so far. Each new incident type is a new playbook plus the adapter operations it needs.
+- The clinic playbooks are administrative only. Rook chases paperwork and contacts people; it never reads a result clinically or decides care, and anything urgent goes straight to a doctor. All patients, clinics and records in it are synthetic.
 - The control mapping in the evidence pack is indicative. It is a starting point to confirm with an auditor, not a claim that an audit would pass.

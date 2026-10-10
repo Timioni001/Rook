@@ -2,8 +2,8 @@ export type Identity = { key: string; token: string; label: string }
 
 // Local demo identities issued by the backend when ROOK_DEMO_TOKENS=1 (the default for local runs).
 export const IDENTITIES: Identity[] = [
-  { key: 'analyst', token: 'demo-analyst-token', label: 'Sam · IT operations' },
-  { key: 'approver', token: 'demo-approver-token', label: 'Priya · IT lead (approver)' },
+  { key: 'analyst', token: 'demo-analyst-token', label: 'Sam · staff' },
+  { key: 'approver', token: 'demo-approver-token', label: 'Priya · manager (approves)' },
   { key: 'viewer', token: 'demo-viewer-token', label: 'Lee · read only' },
   { key: 'other', token: 'demo-other-org-token', label: 'Eve · a different company' },
 ]
@@ -85,15 +85,18 @@ export const ACTION_LABEL: Record<string, string> = {
   notify_clinician: 'Page the clinician',
   resend_prescription: 'Send the prescription to the pharmacy again',
   close_loop: 'Mark the loop closed in the record',
+  move_appointment: 'Move the appointment to a doctor who is in',
 }
 
 // What each playbook is for, in the buyer's words.
 export const PLAYBOOK_COPY: Record<string, { button: string; pitch: string }> = {
+  cover: { button: 'Cover the absence', pitch: 'A doctor calls in sick. Twelve people are booked in and none of them know.' },
+  care: { button: 'Check what was missed', pitch: 'A referral, a result and a prescription the record calls done. Nobody checked.' },
   offboarding: { button: 'Investigate offboarding', pitch: 'Someone left, but their accounts and API keys live on.' },
-  outage: { button: 'Investigate checkout-api alert', pitch: 'A production service started failing right after a deploy.' },
+  outage: { button: 'Investigate the alert', pitch: 'A production service started failing right after a change.' },
   leak: { button: 'Investigate scanner finding', pitch: 'A scanner found a live API key hardcoded in a repository.' },
-  care: { button: 'Sweep the clinic', pitch: 'A referral, a result and a prescription the record calls done. Nobody checked.' },
 }
+
 
 const EVENT_TEXT: Record<string, (d: any) => string> = {
   investigated: () => 'Investigation finished: relationships and findings recorded',

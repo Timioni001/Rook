@@ -70,6 +70,14 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 - Language throughout is what a patient would use, not what a system would: "the heart clinic never got the referral", not "referral loop not closed". Nothing is specific to one country's health system.
 - 105 tests. Checked in a browser through the Cloudflare proxy: the sweep, the approval pause before contacting anyone, and the escalation on the urgent result.
 
+**02:10: the product, stated plainly, and the workflow that shows it.** Rook is a web application a company connects to the software it already runs. Staff report a problem in one dashboard, Rook investigates across every system it touches, proposes a fix, waits for approval on anything that reaches a person outside the building, then checks the result and shows the proof. It does not replace an appointment book or an accounting system. It does the chasing between them.
+
+- New **doctor off sick** playbook, which is that shape of work with nothing medical in it. A doctor is marked unavailable with twelve people booked in. Rook finds who is affected, finds colleagues with room, moves each appointment, tells each person, and checks nobody was put in a slot twice or left booked with someone who is not coming in.
+- The rule that matters: Rook will not move an appointment it cannot tell the patient about, because that person would arrive at a time that no longer exists. In `cover_unreachable` it moves eleven and deliberately leaves the twelfth exactly where it was, named, for reception to phone. In `cover_short` only four slots exist, so eight stay open rather than being shuffled into nothing.
+- Contacting a patient waits for a manager to approve it, every time.
+- The dashboard now leads with the clinic. Identities are staff and manager rather than IT roles, and the front page says what a company is actually buying: one place for unfinished problems, connections to existing software, an agent that coordinates, and approval, audit and proof.
+- 112 tests. Checked in a browser through the Cloudflare proxy: the absence is picked up, every patient contact waits for approval, and the one person who cannot be reached keeps the day honestly unfinished.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

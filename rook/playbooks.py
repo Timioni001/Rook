@@ -7,12 +7,14 @@ investigate it, the remediation it plans, and the closure checks that must hold 
 - offboarding: someone left, but their access and keys live on (access management)
 - outage: a production service is failing after a change (cloud / IT incident)
 - leak: a secrets scanner found a credential hardcoded in a repository (non-human identity)
-- care: handoffs in a clinic that the record calls done and nobody downstream ever completed
+- care: things in a clinic the record calls done and nobody ever actually completed
+- cover: a doctor calls in sick and a day of appointments has to be moved, told and checked
 """
 import datetime
 from .domain import Action
-from .sandbox import SPECIALTY, playbook_of
-from .verification import build_conditions, care_conditions, leak_conditions, outage_conditions
+from .sandbox import DAY, SPECIALTY, playbook_of
+from .verification import (build_conditions, care_conditions, cover_conditions, leak_conditions,
+                           outage_conditions)
 
 
 # ================================================================ playbook: access & offboarding
@@ -878,7 +880,180 @@ class CareFollowUp:
         return []
 
 
-PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage(), LeakedSecret(), CareFollowUp())}
+
+
+# ================================================================ playbook: cover a doctor's absence
+#
+# A doctor calls in sick. Twelve people are booked in with them today and do not know yet. Moving
+# that list is pure coordination: find who is affected, find who has room, move each one, tell each
+# person, and make sure nobody ended up in the same slot twice or left booked with someone who is
+# not coming in. It is the sort of morning a receptionist loses, and nothing about it is medical.
+#
+# The rule that matters: Rook will not move an appointment it cannot tell the patient about, because
+# that patient would arrive at a time that no longer exists.
+
+
+def cover_subject(sb):
+    off = sb.schedule.off_today()
+    return f"clinic:{sb.records.clinic()}" if off else None
+
+
+def investigate_cover(sb, subject):
+    """Who is affected, who could see them instead, and who can actually be told."""
+    off = sb.schedule.off_today()[0]
+    booked = sb.schedule.booked_with(off)
+    options = sb.schedule.cover_options(off)
+    pool = sorted([(d, t) for d, ts in options.items() for t in ts], key=lambda x: x[1])
+    rel = [{"rel": "absence", "doctor": off, "doctor_name": sb.schedule.doctor_name(off),
+            "day": DAY, "affected": len(booked), "cover_slots": len(pool),
+            "covering": {sb.schedule.doctor_name(d): len(ts) for d, ts in options.items()}}]
+    for aid, ap in sorted(booked.items()):
+        pat = sb.records.patient(ap["patient"]) or {}
+        ch = sb.outreach.best_channel(ap["patient"])
+        slot = pool.pop(0) if pool else None
+        rel.append({"rel": "booking", "appointment": aid, "patient": ap["patient"],
+                    "patient_name": pat.get("name", ap["patient"]), "at": ap["at"],
+                    "time": ap["at"][11:16], "reason": ap.get("reason", ""),
+                    "channel": ch,
+                    "to_doctor": slot[0] if slot else None,
+                    "to_doctor_name": sb.schedule.doctor_name(slot[0]) if slot else None,
+                    "to_time": slot[1] if slot else None,
+                    "new_time": slot[1][11:16] if slot else None,
+                    # Rook moves someone only if there is a slot and a way to tell them.
+                    "movable": bool(slot and ch),
+                    "why_not": (None if slot and ch else
+                                "no colleague has a free slot" if not slot else
+                                "no working phone number or address on file")})
+    return rel[0], rel, cover_graph(rel), cover_findings(rel)
+
+
+def cover_graph(rel):
+    off = rel[0]
+    nodes = [{"id": off["doctor"], "kind": "identity", "label": off["doctor_name"],
+              "status": "off sick today", "detail": f"{off['affected']} people booked in"}]
+    edges = []
+    for m in (r for r in rel if r["rel"] == "booking"):
+        nodes.append({"id": m["appointment"], "kind": "credential",
+                      "label": f"{m['time']} · {m['patient_name']}",
+                      "status": "can be moved" if m["movable"] else "stuck",
+                      "detail": m["reason"]})
+        edges.append({"from": off["doctor"], "to": m["appointment"], "rel": "was seeing"})
+        if m["movable"]:
+            nodes.append({"id": m["to_doctor"], "kind": "dependent", "label": m["to_doctor_name"],
+                          "status": "in today, has room", "detail": ""})
+            edges.append({"from": m["appointment"], "to": m["to_doctor"], "rel": "moves to"})
+    seen, uniq = set(), []
+    for n in nodes:
+        if n["id"] not in seen:
+            seen.add(n["id"])
+            uniq.append(n)
+    return {"nodes": uniq, "edges": edges}
+
+
+def cover_findings(rel):
+    off = rel[0]
+    bookings = [r for r in rel if r["rel"] == "booking"]
+    movable = [m for m in bookings if m["movable"]]
+    stuck = [m for m in bookings if not m["movable"]]
+    out = [{"severity": "high",
+            "text": f"{off['doctor_name']} is off sick today. {off['affected']} people are booked in with "
+                    "them and none of them know yet.",
+            "evidence": {"doctor": off["doctor"], "affected": off["affected"]}},
+           {"severity": "info",
+            "text": "Colleagues who are in and have room: "
+                    + (", ".join(f"{d} ({n} slots)" for d, n in off["covering"].items()) or "none")
+                    + f". That is {off['cover_slots']} slots for {off['affected']} people.",
+            "evidence": {"covering": off["covering"]}}]
+    if movable:
+        out.append({"severity": "info",
+                    "text": f"{len(movable)} of the {off['affected']} can be moved to another doctor at a "
+                            "similar time and told about it.",
+                    "evidence": {"movable": [m["patient_name"] for m in movable]}})
+    for m in stuck:
+        out.append({"severity": "high",
+                    "text": f"{m['patient_name']} ({m['time']}, {m['reason']}) cannot be sorted automatically: "
+                            f"{m['why_not']}. Rook will leave the appointment where it is and hand this to "
+                            "reception, because moving someone who will not hear about it is worse than "
+                            "leaving it alone.",
+                    "evidence": {"appointment": m["appointment"], "why_not": m["why_not"]}})
+    return out
+
+
+class ClinicCover:
+    key = "cover"
+    name = "Doctor off sick"
+    trigger = "A doctor marked unavailable with patients booked in"
+    contain_type, contain_label = "move_appointment", "First patient moved after"
+
+    def find_subject(self, sb):
+        return cover_subject(sb)
+
+    def investigate(self, sb, subject):
+        return investigate_cover(sb, subject)
+
+    def title(self, info, subject):
+        return f"{info['doctor_name']} is off sick: {info['affected']} appointments to move today"
+
+    def discovery(self, rel):
+        off = rel[0]
+        return (f"today's list for {off['doctor_name']}, colleagues' free slots and patient contacts",
+                [m["appointment"] for m in rel if m["rel"] == "booking"],
+                {"affected": off["affected"], "cover_slots": off["cover_slots"],
+                 "stuck": sum(1 for m in rel if m["rel"] == "booking" and not m["movable"])})
+
+    def plan(self, rel, iid):
+        acts, off = [], rel[0]
+
+        def add(t, target, deps=(), summary="", risk="low", **p):
+            a = make_action(iid, len(acts) + 1, t, target, p, deps, summary, risk)
+            acts.append(a)
+            return a
+        for m in (r for r in rel if r["rel"] == "booking"):
+            if not m["movable"]:
+                continue
+            mv = add("move_appointment", m["appointment"], service="schedule", patient=m["patient"],
+                     from_doctor=off["doctor"], to_doctor=m["to_doctor"], to_time=m["to_time"],
+                     summary=f"Move {m['patient_name']} from {m['time']} with {off['doctor_name']} to "
+                             f"{m['new_time']} with {m['to_doctor_name']}.")
+            add("contact_patient", m["appointment"], [mv.id], service="outreach", patient=m["patient"],
+                channel=m["channel"]["kind"], value=m["channel"]["value"], risk="medium",
+                summary=f"Tell {m['patient_name']} by {m['channel']['kind']} that their appointment is now "
+                        f"{m['new_time']} with {m['to_doctor_name']}.")
+        return acts
+
+    def conditions(self, rel):
+        return cover_conditions(rel)
+
+    def closed_summary(self, n):
+        return (f"Finished with proof: all {n} steps were checked independently. Everyone has an appointment "
+                "with a doctor who is actually in, everyone has replied, nobody was put into a slot that was "
+                "already taken, and nobody is left booked with the doctor who is off.")
+
+    def declines(self, inc, acts):
+        out = []
+        for m in inc.relationships:
+            if m["rel"] != "booking" or m["movable"]:
+                continue
+            out.append({"what": f"Move {m['patient_name']}'s {m['time']} appointment",
+                        "why": f"{m['why_not'].capitalize()}. Moving someone who will not hear about it means "
+                               "they turn up to a time that no longer exists, so Rook leaves it for reception.",
+                        "rule": "R9-truthful-record"})
+        return out
+
+    def follow_ups(self, inc, acts):
+        stuck = [m for m in inc.relationships if m["rel"] == "booking" and not m["movable"]]
+        out = [f"Reception needs to phone {m['patient_name']} about their {m['time']} appointment "
+               f"({m['reason']}): {m['why_not']}." for m in stuck]
+        if stuck:
+            out.append(f"{len(stuck)} of today's patients are still booked with a doctor who is not coming in. "
+                       "Until someone sorts those, the day is not actually covered.")
+        return out
+
+    def impact(self, sb, inc):
+        return []
+
+
+PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage(), LeakedSecret(), CareFollowUp(), ClinicCover())}
 
 
 def playbook_for(scenario=None, key=None):
