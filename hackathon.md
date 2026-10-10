@@ -60,6 +60,16 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 
 **23:10: the Pages address was never ours.** `check-live.py https://rook.pages.dev` reported `403 error code: 1010`, which reads like a failed deploy. It was two separate problems. Cloudflare's browser-integrity check rejects urllib's default user agent, and `rook.pages.dev` is a create-react-app site belonging to another Cloudflare account: pages.dev subdomains are global, not per account. The checker now identifies itself, verifies the page was built from this repository, and names both failures instead of reporting a dead deployment. `deploy-pages.sh` defaults to `rook-keywarden` and refuses to deploy into a name another account owns.
 
+**00:40: a fourth playbook, in a sector anyone can picture.** The build so far asked a judge to care about API keys before they could care about the product. Healthcare has the same failure and its own name for it: a referral, a result or a prescription is recorded as done by the person who started it, and nobody ever checks whether it happened. Around half of specialist referrals are never completed in the health systems that have been studied, and the record almost never says so.
+
+- New **care follow-up** playbook. It goes through everything a clinic says it has finished and asks the place the work was meant to reach: the specialist clinic's own booking system, the pharmacy's queue, the doctor who ordered the result. Three of the four in the sandbox never happened. The fourth really did, and Rook says so and leaves it alone.
+- Three new systems in the sandbox (the clinic's records, a specialist booking system, a pharmacy) plus patient contact, all synthetic.
+- Two new policy rules. **R9-truthful-record**: the record may be marked done only when a fresh look at the other systems finds nothing missing, so a patient nobody could reach keeps the record honest. **R10-patient-match**: every action is pinned to the patient named on its own record, so one person's follow-up can never touch another's.
+- Contacting a patient now needs a person to approve it, for the same reason revoking a key does: it reaches someone outside the building and cannot be taken back.
+- Rook is administrative here and says so. An urgent result is a doctor's decision: it alerts the doctor who ordered it and does nothing else with it.
+- Language throughout is what a patient would use, not what a system would: "the heart clinic never got the referral", not "referral loop not closed". Nothing is specific to one country's health system.
+- 105 tests. Checked in a browser through the Cloudflare proxy: the sweep, the approval pause before contacting anyone, and the escalation on the urgent result.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

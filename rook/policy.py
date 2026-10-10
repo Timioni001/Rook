@@ -9,6 +9,9 @@ and again immediately before each action executes, against live state.
 
 ROOK_PRINCIPAL = "svc-rook"
 
+CARE_ACTIONS = {"resend_referral", "book_appointment", "contact_patient", "notify_clinician",
+                "close_loop", "resend_prescription"}
+
 ALLOWED = {
     "disable_account": {"github", "cloud", "pm"},
     "issue_replacement": {"vault"},
@@ -18,9 +21,17 @@ ALLOWED = {
     "pause_pipeline": {"cloud"},
     "rollback_service": {"cloud"},
     "resume_pipeline": {"cloud"},
+    "resend_referral": {"records"},
+    "book_appointment": {"booking"},
+    "contact_patient": {"outreach"},
+    "notify_clinician": {"records"},
+    "close_loop": {"records"},
+    "resend_prescription": {"pharmacy"},
 }
 KNOWN_GOOD_MINUTES = 60      # a revision must have run healthy this long to be rolled back to unattended
-NEEDS_APPROVAL = {"revoke_credential"}     # irreversible and production-affecting
+# Revoking a key is irreversible. Contacting a patient reaches a person outside the building and
+# cannot be taken back either, so both wait for someone accountable.
+NEEDS_APPROVAL = {"revoke_credential", "contact_patient"}
 
 
 def owner_of(sb, a):
@@ -35,6 +46,10 @@ def owner_of(sb, a):
         if a.type in ("pause_pipeline", "rollback_service", "resume_pipeline"):
             sb.cloud.deployment(a.target)
             return f"cloud:{a.target}"
+        if a.type in CARE_ACTIONS:
+            # Scoped to the clinic whose sweep this is. R10 then pins each action to the patient
+            # named on its own order, so one patient's follow-up can never touch another's.
+            return f"clinic:{sb.records.clinic()}" if sb.records.order(a.target) else None
     except KeyError:
         return None
 
@@ -93,10 +108,32 @@ def decide(a, inc, sb, plan, approval=None):
             return ("blocked", f"The service still runs revision {cur}; resuming now would keep the bad change live.",
                     "R4-safe-order")
 
+    if a.type in CARE_ACTIONS:
+        o = sb.records.order(a.target)
+        if o is None:
+            return "blocked", "That order does not exist.", "R3-dependency"
+        if a.params.get("patient") and a.params["patient"] != o["patient"]:
+            return ("blocked", "This action names a different patient than the order it belongs to.",
+                    "R10-patient-match")
+    if a.type == "close_loop":
+        # The record's "closed" flag is the thing everyone downstream trusts and nobody re-checks.
+        # Rook may only set it when a fresh look at the other systems finds nothing missing. Policy
+        # runs again immediately before execution, so at plan time it is enough that the plan still
+        # has live steps for this handoff; by the time it runs, the gaps are real or they are gone.
+        missing = sb.handoff_gaps(a.target)
+        if missing:
+            pending = [x for x in plan if x.target == a.target and x.type != "close_loop"
+                       and x.status.value not in ("blocked", "failed", "verified")]
+            if not pending:
+                return ("blocked", "Marking this closed would be false: " + ", ".join(missing) + ".",
+                        "R9-truthful-record")
+
     if a.type in NEEDS_APPROVAL:
         if approval is None:
-            return ("needs_approval", "Revoking a key cannot be undone, so a person with approver "
-                    "rights must confirm it.", "R5-approval")
+            why = ("Contacting a patient reaches a real person and cannot be taken back, so someone "
+                   "accountable has to confirm it." if a.type == "contact_patient" else
+                   "Revoking a key cannot be undone, so a person with approver rights must confirm it.")
+            return "needs_approval", why, "R5-approval"
         if "approver" not in approval.get("roles", []) or approval.get("org") != inc.org:
             return "blocked", "The approval did not come from an approver in this organisation.", "R5-approval"
         return "authorized", f"Allowed by policy and approved by {approval['by']}.", "R5-approval"

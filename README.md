@@ -27,6 +27,7 @@ The engine is the same for every incident: investigate, define closure, plan, au
 | **Access & offboarding** | A completed offboarding ticket | Disables leftover accounts, issues a replacement key, moves every service onto it, revokes the old key (with approval), and removes the leaked key from code | 13 |
 | **Service outage** | A monitoring alert | Ties the alert to the deploy that caused it, pauses auto-deploy, rolls back to a known-good revision, checks that customers can check out, then resumes the pipeline with the bad revision blocked | 7 |
 | **Leaked credential** | A secrets-scanner finding | Probes whether the leaked key still works, attributes it to an owner, finds every service using it, rotates and verifies each one, revokes the old key and clears the file | 3 to 11 |
+| **Care follow-up** | A check of what a clinic says it has finished | Goes through every referral, result and prescription the record calls done, asks the clinic, pharmacy or doctor it was meant to reach, puts right the ones that never happened, and refuses to let the record say done while anything is missing | 13 |
 
 ## Old problems, and how Rook handles each
 
@@ -94,6 +95,8 @@ python -m rook.demo --scenario outage          # outage: bad deploy, ambiguous r
 python -m rook.demo --scenario persistent      # Rook escalates instead of claiming success
 python -m rook.demo --scenario leak            # leaked key: rotate, verify, revoke, clean the file
 python -m rook.demo --scenario leak_unattributed   # Rook refuses to touch a key it cannot attribute
+python -m rook.demo --scenario referral_clean  # a clinic: three things marked done that never happened
+python -m rook.demo --scenario referral_critical   # an urgent result: Rook alerts a doctor and stops
 
 # 2. API + dashboard
 uvicorn rook.api:create_app --factory --port 8000
@@ -123,7 +126,7 @@ docker build -t rook . && docker run --rm -p 8000:8000 rook   # http://localhost
 ### Tests and checks
 
 ```bash
-python -m pytest -q                      # 95 tests
+python -m pytest -q                      # 105 tests
 cd web && npm ci && npx tsc --noEmit && npm run build:static
 bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 ```
@@ -133,6 +136,7 @@ bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 Access & offboarding: `signature`, `clean`, `ambiguous_applied`, `ambiguous_lost`, `persistent`, `permission_denied`, `revoke_noop` (the vault says the key is revoked but it still works), `replacement_invalid`, `faulty_update`, `regression_fail`.
 Service outage: `outage` (the rollback times out but did land), `outage_clean`, `outage_wrong_cause` (the rollback doesn't fix it), `outage_rollback_down`.
 Leaked credential: `leak` (a config API fails once mid-rotation), `leak_clean`, `leak_already_revoked` (the key is already dead, so Rook refuses to rotate it), `leak_unattributed` (the key matches no credential, so Rook refuses to touch it).
+Care follow-up: `referral_clean`, `referral` (the booking system fails once), `referral_critical` (one result is urgent, so Rook alerts a doctor and touches nothing else), `referral_unreachable` (the patient cannot be contacted, so Rook refuses to mark it done).
 They are listed in `rook/sandbox.py:SCENARIOS`. Failures are injected deterministically per operation.
 
 ## Architecture
@@ -143,7 +147,7 @@ web/ (Next.js)  ──/api proxy──▶  rook/api.py (FastAPI, bearer auth, or
                                      ▼
                           rook/engine.py  Rook: investigate → conditions → plan → policy
                           │      │        → execute → reconcile → verify → close/escalate
-                          │   rook/playbooks.py  offboarding, service outage, leaked credential
+                          │   rook/playbooks.py  offboarding, outage, leaked credential, care follow-up
              rook/policy.py  rook/verification.py (independent observers)
                           │
                 rook/sandbox.py  five stateful mock adapters, idempotency, failure injection
@@ -176,5 +180,6 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 - Demo bearer tokens are built in for local use. Set `KEYWARDEN_TOKENS` (JSON) and `KEYWARDEN_DEMO_TOKENS=0` anywhere shared.
 - There is a single shared sandbox, so only one incident runs at a time.
 - The optional model planner (`ROOK_PLANNER=llm`) covers the offboarding playbook and only proposes actions. Ordering, policy and verification stay deterministic.
-- Three playbooks so far. Each new incident type is a new playbook plus the adapter operations it needs.
-- The SOC 2 and ISO 27001 control mapping in the evidence pack is indicative. It is a starting point to confirm with an auditor, not a claim that an audit would pass.
+- Four playbooks so far. Each new incident type is a new playbook plus the adapter operations it needs.
+- The care playbook is administrative only. Rook chases paperwork and contacts people; it never reads a result clinically or decides care, and anything urgent goes straight to a doctor. All patients, clinics and records in it are synthetic.
+- The control mapping in the evidence pack is indicative. It is a starting point to confirm with an auditor, not a claim that an audit would pass.

@@ -11,12 +11,13 @@ An operations agent for growing companies that resolves IT incidents and access 
 | Credential offboarding | a leaver | `signature`, `clean`, `faulty_update`, `persistent` |
 | Service outage | a monitoring alert | `outage`, `outage_clean`, `outage_wrong_cause`, `outage_rollback_down` |
 | Leaked credential | a secrets-scanner finding | `leak`, `leak_clean`, `leak_already_revoked`, `leak_unattributed` |
+| Care follow-up | a check of what a clinic says it finished | `referral_clean`, `referral`, `referral_critical`, `referral_unreachable` |
 
 ## Map of the code
 
 - `rook/playbooks.py`: per-playbook investigation, plan, closure conditions and copy. Registry `PLAYBOOKS`.
 - `rook/engine.py`: the shared run loop, ordering, retries, reconcile-before-retry, report and evidence pack.
-- `rook/policy.py`: rules R0 to R8. R4 is safe order; R8 means rollback goes only to a known-good revision, or needs approval.
+- `rook/policy.py`: rules R0 to R10. R9 stops a record being marked done while anything is missing; R10 pins every care action to the patient on its own record. R4 is safe order; R8 means rollback goes only to a known-good revision, or needs approval.
 - `rook/verification.py`: observers that check the real sandbox state after a fix, plus `CONTROLS`, the indicative SOC 2 / ISO 27001 mapping used by the evidence pack.
 - Refusals: each playbook's `declines(inc, acts)` plus blocked and pending actions, collected in `Engine.report` as `refusals`.
 - `rook/sandbox.py`: synthetic systems (source host, cloud, app and directory, tracker, vault) and the `SCENARIOS`. Synthetic credentials only.
@@ -29,7 +30,7 @@ An operations agent for growing companies that resolves IT incidents and access 
 ```bash
 ./scripts/setup-wsl.sh        # once: Node 22, uv + Python 3.13 venv (neatlogs needs < 3.14), npm ci, cloudflared
 ./scripts/dev.sh              # API :8000 + dashboard http://localhost:3000
-.venv/bin/pytest -q           # 95 tests
+.venv/bin/pytest -q           # 105 tests
 .venv/bin/python -m rook.demo --scenario outage
 ```
 

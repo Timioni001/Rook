@@ -7,11 +7,12 @@ investigate it, the remediation it plans, and the closure checks that must hold 
 - offboarding: someone left, but their access and keys live on (access management)
 - outage: a production service is failing after a change (cloud / IT incident)
 - leak: a secrets scanner found a credential hardcoded in a repository (non-human identity)
+- care: handoffs in a clinic that the record calls done and nobody downstream ever completed
 """
 import datetime
 from .domain import Action
-from .sandbox import playbook_of
-from .verification import build_conditions, leak_conditions, outage_conditions
+from .sandbox import SPECIALTY, playbook_of
+from .verification import build_conditions, care_conditions, leak_conditions, outage_conditions
 
 
 # ================================================================ playbook: access & offboarding
@@ -638,7 +639,246 @@ class LeakedSecret:
         return [d for d in (cred["dependents"] if cred else []) if not sb.health(d)]
 
 
-PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage(), LeakedSecret())}
+
+
+# ================================================================ playbook: care follow-up
+#
+# A clinic records that a referral was sent, a result was filed, a prescription went to the
+# pharmacy. Each of those is one system saying something about work that happens somewhere else.
+# Often it never happened, and nothing in the record says so. The patient goes home believing it
+# is handled. Rook asks the place the work was supposed to reach, and refuses to let the record
+# say "done" while anything is still missing.
+#
+# Rook does the chasing, not the medicine. It moves paperwork and contacts people. It never reads
+# a result and decides what it means, and anything urgent goes straight to a doctor.
+
+KIND_LABEL = {"referral": "referral", "result": "test result", "prescription": "prescription"}
+
+
+def care_subject(sb):
+    return f"clinic:{sb.records.clinic()}"
+
+
+def _place(h):
+    """Where this was supposed to get to, in the words a patient would use."""
+    return {"referral": h["place"], "prescription": "the pharmacy",
+            "result": f"{h['doctor']}, who ordered it"}[h["kind"]]
+
+
+def investigate_care(sb, subject):
+    """Go through everything the clinic started for a patient and ask whether it actually happened."""
+    rel, unfinished = [], 0
+    for oid, o in sorted(sb.records.orders().items()):
+        missing = sb.handoff_gaps(oid)
+        pat = sb.records.patient(o["patient"]) or {}
+        doc = sb.records.clinician(o.get("ordered_by")) or {}
+        res = sb.records.result(oid) or {}
+        sp = o.get("specialty")
+        rel.append({
+            "rel": "follow_up", "order": oid, "kind": o["kind"],
+            "patient": o["patient"], "patient_name": pat.get("name", o["patient"]),
+            "specialty": sp, "place": SPECIALTY.get(sp, sp), "drug": o.get("drug"),
+            "reason": o.get("reason", ""),
+            "ordered_by": o.get("ordered_by"), "doctor": doc.get("name", o.get("ordered_by")),
+            "ordered_at": o.get("ordered_at", ""), "days_waiting": _days_since(o.get("ordered_at")),
+            "record_status": o.get("record_status", ""), "record_says_done": bool(o.get("loop_closed")),
+            "urgent": o.get("urgency") == "critical", "finding": res.get("finding", ""),
+            "missing": missing, "finished": not missing,
+            "channel": sb.outreach.best_channel(o["patient"]),
+            "send_channel": sb.booking.working_channel(sp) if sp else None,
+            "received": sb.booking.received(oid, sp) if sp else None,
+            "at_pharmacy": sb.pharmacy.has(oid) if o["kind"] == "prescription" else None})
+        unfinished += bool(missing)
+    info = {"name": sb.records.clinic(), "total": len(rel), "unfinished": unfinished}
+    return info, rel, care_graph(rel), care_findings(rel, info)
+
+
+def care_graph(rel):
+    nodes, edges = [], []
+    for h in rel:
+        oid = h["order"]
+        nodes.append({"id": oid, "kind": "credential",
+                      "label": f"{KIND_LABEL[h['kind']]} for {h['patient_name']}",
+                      "status": "done" if h["finished"] else f"{len(h['missing'])} thing(s) missing",
+                      "detail": h["reason"]})
+        who = f"patient:{h['patient']}"
+        nodes.append({"id": who, "kind": "identity", "label": h["patient_name"],
+                      "status": "can be reached" if h["channel"] else "no working contact", "detail": ""})
+        edges.append({"from": who, "to": oid, "rel": "is waiting on"})
+        dest = {"referral": f"place:{h['specialty']}", "prescription": "place:pharmacy",
+                "result": f"doctor:{h['ordered_by']}"}[h["kind"]]
+        reached = {"referral": h["received"], "prescription": h["at_pharmacy"],
+                   "result": h["finished"]}[h["kind"]]
+        nodes.append({"id": dest, "kind": "dependent", "label": _place(h),
+                      "status": "has it" if reached else "never got it", "detail": ""})
+        edges.append({"from": oid, "to": dest, "rel": "should have reached"})
+    seen, uniq = set(), []
+    for n in nodes:
+        if n["id"] not in seen:
+            seen.add(n["id"])
+            uniq.append(n)
+    return {"nodes": uniq, "edges": edges}
+
+
+def care_findings(rel, info):
+    out = [{"severity": "high" if info["unfinished"] else "info",
+            "text": f"{info['unfinished']} of {info['total']} things the clinic's record calls done have not "
+                    "actually happened. Each one was marked finished by the person who started it, and nobody "
+                    "checked afterwards.",
+            "evidence": {"checked": info["total"], "unfinished": info["unfinished"]}}]
+    for h in rel:
+        label, waited = KIND_LABEL[h["kind"]], h["days_waiting"]
+        when = f" {waited} days ago" if waited is not None else ""
+        if h["urgent"]:
+            out.append({"severity": "high",
+                        "text": f"{h['patient_name']}'s {label} is urgent ({h['finding']}) and no doctor has seen "
+                                "it. Deciding what to do about it is a doctor's job, so Rook will alert "
+                                f"{h['doctor']} and leave the rest alone.",
+                        "evidence": {"order": h["order"], "finding": h["finding"]}})
+            continue
+        if h["finished"]:
+            out.append({"severity": "info",
+                        "text": f"{h['patient_name']}'s {label} really did happen. The {_place(h)} has it, "
+                                "the appointment exists and she has replied. Rook checked and will not touch it.",
+                        "evidence": {"order": h["order"]}})
+            continue
+        out.append({"severity": "high",
+                    "text": f"{h['patient_name']}'s {label} was ordered{when}, and the record says "
+                            f"'{h['record_status']}'. In fact: " + "; ".join(h["missing"]) + ".",
+                    "evidence": {"order": h["order"], "missing": h["missing"]}})
+        if h["kind"] == "referral" and not h["received"] and h["send_channel"]:
+            out.append({"severity": "medium",
+                        "text": f"It went to {h['sent_to'] if h.get('sent_to') else 'a channel'} the {h['place']} "
+                                f"no longer uses. What they do read is {h['send_channel']}.",
+                        "evidence": {"working_channel": h["send_channel"]}})
+        if "the patient has not been told" in h["missing"] and not h["channel"]:
+            out.append({"severity": "medium",
+                        "text": f"Every phone number and address on file for {h['patient_name']} is out of date, so "
+                                "there is no way to tell them. A person has to track them down.",
+                        "evidence": {"patient": h["patient"]}})
+    return out
+
+
+class CareFollowUp:
+    key = "care"
+    name = "Care follow-up"
+    trigger = "A check of everything the clinic says it has finished"
+    contain_type, contain_label = "close_loop", "First one honestly finished after"
+
+    def find_subject(self, sb):
+        return care_subject(sb)
+
+    def investigate(self, sb, subject):
+        return investigate_care(sb, subject)
+
+    def title(self, info, subject):
+        return (f"{info['unfinished']} of {info['total']} things marked done in the record "
+                "never actually happened")
+
+    def discovery(self, rel):
+        return (f"the specialist clinics, the pharmacy and the patients behind {len(rel)} records",
+                [h["order"] for h in rel],
+                {"checked": len(rel), "unfinished": sum(not h["finished"] for h in rel),
+                 "urgent": sum(h["urgent"] for h in rel)})
+
+    def plan(self, rel, iid):
+        acts = []
+
+        def add(t, target, deps=(), summary="", risk="low", **p):
+            a = make_action(iid, len(acts) + 1, t, target, p, deps, summary, risk)
+            acts.append(a)
+            return a
+        for h in rel:
+            if h["finished"]:
+                continue
+            oid, steps = h["order"], []
+            if h["urgent"]:
+                add("notify_clinician", oid, service="records", clinician=h["ordered_by"],
+                    patient=h["patient"], risk="medium",
+                    summary=f"Alert {h['doctor']} straight away about {h['patient_name']}'s urgent result "
+                            f"({h['finding']}). Rook does nothing else with it.")
+                continue
+            if h["kind"] == "referral":
+                if not h["received"] and h["send_channel"]:
+                    steps.append(add("resend_referral", oid, service="records", channel=h["send_channel"],
+                                     patient=h["patient"], specialty=h["specialty"],
+                                     summary=f"Send {h['patient_name']}'s referral to the {h['place']} again, "
+                                             f"this time through {h['send_channel']}."))
+                steps.append(add("book_appointment", oid, [x.id for x in steps], service="booking",
+                                 patient=h["patient"], specialty=h["specialty"],
+                                 summary=f"Get {h['patient_name']} an actual appointment at the {h['place']}."))
+            elif h["kind"] == "prescription":
+                if not h["at_pharmacy"]:
+                    steps.append(add("resend_prescription", oid, service="pharmacy", patient=h["patient"],
+                                     summary=f"Send {h['patient_name']}'s {h['drug']} to the pharmacy again. "
+                                             "The pharmacy has no record of it."))
+            elif h["kind"] == "result":
+                steps.append(add("notify_clinician", oid, service="records", clinician=h["ordered_by"],
+                                 patient=h["patient"],
+                                 summary=f"Put {h['patient_name']}'s result in front of {h['doctor']}, who "
+                                         "ordered it and has not seen it."))
+            if h["channel"] and "the patient has not been told" in h["missing"]:
+                steps.append(add("contact_patient", oid, [x.id for x in steps], service="outreach",
+                                 patient=h["patient"], channel=h["channel"]["kind"],
+                                 value=h["channel"]["value"], risk="medium",
+                                 summary=f"Tell {h['patient_name']} what has been arranged, by "
+                                         f"{h['channel']['kind']} on the {h['channel']['value']}, which is the one "
+                                         "she still uses."))
+            if steps:
+                add("close_loop", oid, [x.id for x in steps], service="records", patient=h["patient"],
+                    summary=f"Mark {oid} finished in the record, and only once everywhere else agrees it is.")
+        return acts
+
+    def conditions(self, rel):
+        return care_conditions(rel)
+
+    def closed_summary(self, n):
+        return (f"Finished with proof: all {n} steps were checked independently. Everything the record called done "
+                "was tested against the place it was supposed to reach, the ones that had not happened were put "
+                "right, and the record now says done only where that is true.")
+
+    def declines(self, inc, acts):
+        out = []
+        for h in inc.relationships:
+            if h["rel"] != "follow_up":
+                continue
+            if h["urgent"]:
+                out.append({"what": f"Deal with {h['patient_name']}'s urgent result itself",
+                            "why": f"What an urgent result means is a doctor's decision. Rook alerted {h['doctor']} "
+                                   "and will not file it, move it or mark it done on their behalf.",
+                            "rule": "R6-clinical-scope"})
+            if h["finished"]:
+                out.append({"what": f"Change anything about {h['patient_name']}'s {KIND_LABEL[h['kind']]}",
+                            "why": f"Rook checked with the {_place(h)} and it genuinely is finished. "
+                                   "There is nothing to do.", "rule": "R0-default"})
+            if "the patient has not been told" in h["missing"] and not h["channel"]:
+                out.append({"what": f"Mark {h['patient_name']}'s {KIND_LABEL[h['kind']]} as done",
+                            "why": "Every way of contacting them is out of date, so they still do not know. "
+                                   "Rook will not let the record claim otherwise.",
+                            "rule": "R9-truthful-record"})
+        return out
+
+    def follow_ups(self, inc, acts):
+        out = []
+        for h in inc.relationships:
+            if h["rel"] != "follow_up":
+                continue
+            if h["urgent"]:
+                out.append(f"{h['doctor']} has been alerted about {h['patient_name']}'s urgent result. A doctor "
+                           "has to look at it and sign it off. Rook cannot do that part.")
+            if "the patient has not been told" in h["missing"] and not h["channel"]:
+                out.append(f"Find a way to reach {h['patient_name']}. Until someone does, they have no idea what "
+                           "was arranged for them.")
+        if any(h["rel"] == "follow_up" and not h["finished"] for h in inc.relationships):
+            out.append("All of these were marked done by the people who started them, with nothing checking "
+                       "afterwards. That gap is the thing worth fixing properly.")
+        return out
+
+    def impact(self, sb, inc):
+        return []
+
+
+PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage(), LeakedSecret(), CareFollowUp())}
 
 
 def playbook_for(scenario=None, key=None):

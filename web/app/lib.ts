@@ -79,6 +79,12 @@ export const ACTION_LABEL: Record<string, string> = {
   pause_pipeline: 'Pause auto-deploy',
   rollback_service: 'Roll back to known-good revision',
   resume_pipeline: 'Resume auto-deploy, bad revision blocked',
+  resend_referral: 'Send the referral again, on a live channel',
+  book_appointment: 'Book the appointment',
+  contact_patient: 'Tell the patient',
+  notify_clinician: 'Page the clinician',
+  resend_prescription: 'Send the prescription to the pharmacy again',
+  close_loop: 'Mark the loop closed in the record',
 }
 
 // What each playbook is for, in the buyer's words.
@@ -86,6 +92,7 @@ export const PLAYBOOK_COPY: Record<string, { button: string; pitch: string }> = 
   offboarding: { button: 'Investigate offboarding', pitch: 'Someone left, but their accounts and API keys live on.' },
   outage: { button: 'Investigate checkout-api alert', pitch: 'A production service started failing right after a deploy.' },
   leak: { button: 'Investigate scanner finding', pitch: 'A scanner found a live API key hardcoded in a repository.' },
+  care: { button: 'Sweep the clinic', pitch: 'A referral, a result and a prescription the record calls done. Nobody checked.' },
 }
 
 const EVENT_TEXT: Record<string, (d: any) => string> = {

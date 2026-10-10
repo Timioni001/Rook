@@ -27,7 +27,7 @@ def events(st, iid):
 
 
 def test_playbooks_registered():
-    assert set(PLAYBOOKS) == {"offboarding", "outage", "leak"}
+    assert set(PLAYBOOKS) == {"offboarding", "outage", "leak", "care"}
 
 
 def test_investigation_finds_bad_deploy_and_trap():
@@ -151,7 +151,8 @@ def test_outage_over_http(tmp_path):
         sc = {s["name"]: s["playbook"] for s in c.get("/api/scenarios", headers=H).json()}
         assert sc["outage"] == "outage" and sc["signature"] == "offboarding"
         assert sc["leak"] == "leak" and sc["leak_unattributed"] == "leak"
-        assert {p["key"] for p in c.get("/api/playbooks", headers=H).json()} == {"offboarding", "outage", "leak"}
+        assert sc["referral"] == "care" and sc["referral_critical"] == "care"
+        assert {p["key"] for p in c.get("/api/playbooks", headers=H).json()} == {"offboarding", "outage", "leak", "care"}
         iid = c.post("/api/incidents", json={"scenario": "outage"}, headers=H).json()["id"]
         assert c.post(f"/api/incidents/{iid}/run", headers=H).status_code == 202
         body = c.get(f"/api/incidents/{iid}", headers=H).json()

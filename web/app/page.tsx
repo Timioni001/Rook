@@ -10,6 +10,7 @@ const PLAYBOOK_NAME: Record<string, string> = {
   offboarding: 'Access & offboarding',
   outage: 'Service outage',
   leak: 'Leaked credential',
+  care: 'Care follow-up',
 }
 
 const Pill = ({ tone, children }: { tone: string; children: React.ReactNode }) =>

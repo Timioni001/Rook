@@ -30,6 +30,12 @@ TOOL_DOCS = {
     "pause_pipeline": "Turn off auto-deploy for a service so nothing redeploys over a fix",
     "rollback_service": "Deploy a previous revision of a cloud service",
     "resume_pipeline": "Turn auto-deploy back on, with a bad revision blocked",
+    "resend_referral": "Send a referral again on a channel the receiving clinic still reads",
+    "book_appointment": "Ask the specialist's scheduling system for an appointment",
+    "contact_patient": "Tell the patient what was arranged, on a channel they answer",
+    "notify_clinician": "Page the clinician responsible for the order",
+    "close_loop": "Mark the referral loop closed in the record",
+    "resend_prescription": "Send a prescription to the pharmacy again",
 }
 # What undoing each action would take, shown to approvers and reviewers.
 UNDO = {
@@ -41,6 +47,12 @@ UNDO = {
     "pause_pipeline": "Yes. Resume the pipeline (Rook does this as part of the plan).",
     "rollback_service": "Yes. Redeploy the newer revision.",
     "resume_pipeline": "Yes. Pause it again.",
+    "resend_referral": "Yes. The referral can be withdrawn with the specialist.",
+    "book_appointment": "Yes. The appointment can be cancelled or moved.",
+    "contact_patient": "No. A message to a patient cannot be unsent.",
+    "notify_clinician": "No, and it should not be. A page to a clinician stands.",
+    "close_loop": "Yes. The record can be reopened.",
+    "resend_prescription": "Yes. The prescription can be cancelled with the pharmacy.",
 }
 
 
@@ -465,6 +477,18 @@ class Engine:
             return self.sb.cloud.rollback(a.target, p["to_revision"], a.idem_key)
         if a.type == "resume_pipeline":
             return self.sb.cloud.resume_pipeline(a.target, p["block_revision"], a.idem_key)
+        if a.type == "resend_referral":
+            return self.sb.records.resend_referral(a.target, p["channel"], a.idem_key)
+        if a.type == "book_appointment":
+            return self.sb.booking.book(a.target, p["patient"], p["specialty"], a.idem_key)
+        if a.type == "contact_patient":
+            return self.sb.outreach.contact(p["patient"], p["channel"], p["value"], a.idem_key)
+        if a.type == "notify_clinician":
+            return self.sb.records.notify_clinician(a.target, p["clinician"], a.idem_key)
+        if a.type == "close_loop":
+            return self.sb.records.close_loop(a.target, a.idem_key)
+        if a.type == "resend_prescription":
+            return self.sb.pharmacy.send(a.target, a.idem_key)
         raise Permanent("unsupported action")
 
     # ---- compensation: undo a dependent update that broke the service ----
@@ -629,7 +653,7 @@ def evidence_pack(rep, audit, chain):
           for i, a in enumerate(rep["actions"])]
     L += ["", "## Approvals"] + ([f"- {x['decision']} by {x['by']} ({x['action']})" for x in rep["approvals"]] or ["- none"])
     L += ["", "## Closure checks (independently observed)",
-          "| Check | Result | SOC 2 | ISO 27001 | Evidence |", "|---|---|---|---|---|"]
+          "| Check | Result | Control | Also satisfies | Evidence |", "|---|---|---|---|---|"]
     for c in rep["conditions"]:
         soc, iso, _ = control_for(c["method"])
         L.append(f"| {c['description']} | {'PASS' if c['result'] else 'FAIL' if c['result'] is False else 'INCONCLUSIVE'} "
@@ -648,7 +672,7 @@ def evidence_pack(rep, audit, chain):
               "Each closure check is a fact observed on the live system, which is the kind of evidence these "
               "controls are sampled for. This mapping is a starting point to confirm with your auditor, not a "
               "claim that an audit would pass.", "",
-              "| SOC 2 | ISO 27001 | What the control is about | Checks passing |", "|---|---|---|---|"] + L2
+              "| Control | Also satisfies | What the control is about | Checks passing |", "|---|---|---|---|"] + L2
     L += ["", "## Invariants"] + [f"- {k}: {'yes' if v else 'no'}" for k, v in rep["invariants"].items()]
     L += ["", "## What Rook refused to do"] + (
         [f"- **{r['what']}** -- {r['why']}" + (f" ({r['rule']})" if r.get("rule") else "")

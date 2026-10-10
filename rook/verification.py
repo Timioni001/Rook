@@ -87,6 +87,50 @@ def _revision_blocked(sb, a):
     return ok, {"blocked_revisions": p["blocked"], "pipeline_desired": p["desired"]}
 
 
+# ---------------------------------------------------------------- referral & result follow-up
+# Every one of these reads the system that would actually know, which is rarely the system that
+# claims the work is done. The record saying "sent" is not evidence that anyone received it.
+
+KIND_LABEL_V = {"referral": "referral", "result": "test result", "prescription": "prescription"}
+
+
+def _referral_received(sb, a):
+    got = sb.booking.received(a["order"], a["specialty"])
+    return got, {"specialist_inbox": a["specialty"], "has_referral": got}
+
+
+def _appointment_booked(sb, a):
+    appt = sb.booking.appointment_for(a["patient"], a["specialty"])
+    return appt is not None, {"appointment": appt}
+
+
+def _patient_reached(sb, a):
+    """Reached means the patient answered on a channel, not that a message was sent into the void."""
+    msgs = sb.outreach.messages(a["patient"])
+    return sb.outreach.reached(a["patient"]), {
+        "attempts": [{"channel": m["kind"], "delivered": m["delivered"], "responded": m["responded"]} for m in msgs]}
+
+
+def _clinician_notified(sb, a):
+    notes = sb.records.notified(a["order"])
+    return bool(notes), {"pages": notes}
+
+
+def _clinician_acknowledged(sb, a):
+    who = sb.records.acknowledged(a["order"])
+    return who is not None, {"acknowledged_by": who}
+
+
+def _loop_closed_in_record(sb, a):
+    done = sb.records.loop_closed(a["order"])
+    return done, {"loop_closed": done}
+
+
+def _prescription_at_pharmacy(sb, a):
+    there = sb.pharmacy.has(a["order"])
+    return there, {"at_pharmacy": there, "dispensed": sb.pharmacy.dispensed(a["order"])}
+
+
 def _leak_attributed(sb, a):
     """Can this leaked fingerprint be tied to a credential with a known owner? Rook never acts on
     access it cannot attribute, so this is a closure condition rather than a plan-time guess."""
@@ -112,6 +156,13 @@ OBSERVERS = {
     "regression_passes": _regression_passes,
     "no_dependents_on_old_key": _no_live_dependents_on_old,
     "leak_attributed": _leak_attributed,
+    "referral_received": _referral_received,
+    "prescription_at_pharmacy": _prescription_at_pharmacy,
+    "appointment_booked": _appointment_booked,
+    "patient_reached": _patient_reached,
+    "clinician_notified": _clinician_notified,
+    "clinician_acknowledged": _clinician_acknowledged,
+    "loop_closed_in_record": _loop_closed_in_record,
 }
 
 
@@ -223,6 +274,15 @@ CONTROLS = {
     "bad_revision_blocked": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "The faulty change cannot be redeployed"),
     "pipeline_resumed": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "Change control is operating again, not left frozen"),
     "pipeline_paused": ("SOC 2 CC8.1", "ISO 27001 A.8.32", "Automated deployment is held during the change"),
+    "referral_received": ("Care follow-up", "Patient safety", "The referral reached the clinic it was meant for"),
+    "prescription_at_pharmacy": ("Care follow-up", "Patient safety",
+                                 "The pharmacy has the prescription the record says was sent"),
+    "appointment_booked": ("Care follow-up", "Patient safety", "The patient has an appointment, not a promise"),
+    "patient_reached": ("Care follow-up", "Patient safety", "The patient knows what happens next"),
+    "clinician_notified": ("Urgent results", "Patient safety", "An urgent result reaches a doctor"),
+    "clinician_acknowledged": ("Urgent results", "Patient safety",
+                               "A doctor has taken responsibility for the result"),
+    "loop_closed_in_record": ("Care follow-up", "Patient safety", "The record matches what really happened"),
 }
 
 
@@ -257,6 +317,53 @@ def leak_conditions(rel):
                 expected="file no longer contains the leaked key",
                 method="secret_removed_from_repo", args={"path": r["path"], "fp": r["fp"]}))
         conds = head + conds
+    return conds
+
+
+def care_conditions(rel):
+    """What has to be true before the clinic's record may say any of this is finished.
+
+    Things the record already calls done are checked as well. Proving one really did happen is
+    worth as much as putting right the ones that did not.
+    """
+    conds = []
+    for h in (r for r in rel if r["rel"] == "follow_up"):
+        oid, pid, who, place = h["order"], h["patient"], h["patient_name"], h["place"]
+        if h["kind"] == "referral":
+            conds += [
+                Condition(id=f"{oid}-received", description=f"The {place} has {who}'s referral",
+                          expected="the referral is in the receiving clinic's own system",
+                          method="referral_received", args={"order": oid, "specialty": h["specialty"]}),
+                Condition(id=f"{oid}-appointment", description=f"{who} has a real appointment at the {place}",
+                          expected="an appointment exists in their booking system",
+                          method="appointment_booked", args={"patient": pid, "specialty": h["specialty"]}),
+                Condition(id=f"{oid}-patient-told", description=f"{who} has replied, so she knows about it",
+                          expected="a message was delivered and answered", method="patient_reached",
+                          args={"patient": pid})]
+        elif h["kind"] == "result":
+            conds.append(Condition(
+                id=f"{oid}-doctor-told", description=f"{h['doctor']} has been sent {who}'s result",
+                expected="the result is in front of the doctor who ordered it",
+                method="clinician_notified", args={"order": oid}))
+            if h["urgent"]:
+                conds.append(Condition(
+                    id=f"{oid}-acknowledged",
+                    description=f"A doctor has seen and signed off {who}'s urgent result",
+                    expected="a doctor has acknowledged it", method="clinician_acknowledged",
+                    args={"order": oid}))
+        elif h["kind"] == "prescription":
+            conds += [
+                Condition(id=f"{oid}-at-pharmacy", description=f"The pharmacy has {who}'s {h['drug']}",
+                          expected="the prescription is in the pharmacy's queue",
+                          method="prescription_at_pharmacy", args={"order": oid}),
+                Condition(id=f"{oid}-patient-told", description=f"{who} has replied, so he knows to collect it",
+                          expected="a message was delivered and answered", method="patient_reached",
+                          args={"patient": pid})]
+        conds.append(Condition(
+            id=f"{oid}-record-true",
+            description=f"The record only calls {who}'s {KIND_LABEL_V[h['kind']]} done if it really is",
+            expected="the record agrees with what the other systems show",
+            method="loop_closed_in_record", args={"order": oid}))
     return conds
 
 
@@ -304,6 +411,18 @@ def checks_for(a):
                 ("bad_revision_blocked", {"service": a.target, "revision": p["block_revision"]}),
                 ("running_known_good", {"service": a.target, "bad_revision": p["block_revision"],
                                         "good_revisions": [p["expect_revision"]]})]
+    if a.type == "resend_referral":
+        return [("referral_received", {"order": a.target, "specialty": p["specialty"]})]
+    if a.type == "book_appointment":
+        return [("appointment_booked", {"patient": p["patient"], "specialty": p["specialty"]})]
+    if a.type == "contact_patient":
+        return [("patient_reached", {"patient": p["patient"]})]
+    if a.type == "notify_clinician":
+        return [("clinician_notified", {"order": a.target})]
+    if a.type == "close_loop":
+        return [("loop_closed_in_record", {"order": a.target})]
+    if a.type == "resend_prescription":
+        return [("prescription_at_pharmacy", {"order": a.target})]
     return None
 
 
@@ -338,6 +457,18 @@ def applied(sb, a):
             return sb.cloud.deployment(a.target)["current"] == p["to_revision"]
         if a.type == "resume_pipeline":
             return sb.cloud.pipeline(a.target)["auto_deploy"]
+        if a.type == "resend_referral":
+            return sb.booking.received(a.target, sb.records.order(a.target)["specialty"])
+        if a.type == "book_appointment":
+            return sb.booking.appointment_for(p["patient"], p["specialty"]) is not None
+        if a.type == "contact_patient":
+            return any(m["kind"] == p["channel"] for m in sb.outreach.messages(p["patient"]))
+        if a.type == "notify_clinician":
+            return bool(sb.records.notified(a.target))
+        if a.type == "close_loop":
+            return sb.records.loop_closed(a.target)
+        if a.type == "resend_prescription":
+            return sb.pharmacy.has(a.target)
     except Exception:
         return None
     return None
