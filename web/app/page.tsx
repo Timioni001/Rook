@@ -101,160 +101,186 @@ export default function Page() {
   const state = R ? INCIDENT_STATE[R.status] || INCIDENT_STATE.open : null
   const pending = R?.actions.filter((a: any) => a.status === 'needs_approval') || []
 
+  const isAnalyst = !!me?.roles.includes('analyst')
+  const isApprover = !!me?.roles.includes('approver')
+
   return (
-    <div className="shell">
-      <header className="top">
-        <div>
-          <h1>Keywarden <span className="muted">· Rook</span></h1>
-          <p className="muted small">Investigate. Contain. Verify.</p>
-        </div>
-        <div className="who">
-          <label htmlFor="who" className="small muted">Signed in as (demo identity)</label>
-          <select id="who" value={who.key} onChange={(e) => setWho(e.target.value)}>
-            {IDENTITIES.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
-          </select>
-          {me && <span className="small muted">org {me.org} · {me.roles.join(', ')}</span>}
-        </div>
-      </header>
-      <p className="sandbox-note" role="note">
-        Sandbox: every system here is a mock integration with synthetic keys. Nothing real is touched.
-      </p>
-
-      {err && (
-        <div className="panel error" role="alert">
-          <b>Something went wrong.</b> {err}{' '}
-          <button onClick={() => (id ? loadIncident(id) : loadList())}>Retry</button>
-        </div>
-      )}
-
-      <div className="layout">
-        <aside>
-          <section className="panel">
-            <h2>New incident</h2>
-            <label htmlFor="scenario" className="small muted">Sandbox scenario</label>
-            <select id="scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>
-              {scenarios.map((s) => <option key={s.name} value={s.name}>{s.name.replace(/_/g, ' ')}</option>)}
+    <div className="page">
+      <div className="frame">
+        <nav className="nav" aria-label="Main">
+          <a className="brand" href="#top"><Star /> Keywarden</a>
+          <div className="nav-links">
+            <a href="#incident">Incident</a>
+            <a href="#plan">Plan</a>
+            <a href="#verify">Verification</a>
+            <a href="#timeline">Timeline</a>
+          </div>
+          <label className="who">
+            <span className="sr-only">Signed in as (demo identity)</span>
+            <select id="who" value={who.key} onChange={(e) => setWho(e.target.value)}>
+              {IDENTITIES.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
             </select>
-            <p className="small muted">{scenarios.find((s) => s.name === scenario)?.description}</p>
-            <button className="primary" disabled={busy || !me?.roles.includes('analyst')} onClick={create}>
-              Investigate offboarded contractor
-            </button>
-            {me && !me.roles.includes('analyst') && <p className="small muted">This identity cannot start incidents.</p>}
-          </section>
-          <section className="panel">
-            <h2>Incidents</h2>
-            {list === null && <p className="muted small">Loading…</p>}
-            {list?.length === 0 && <p className="muted small">No incidents yet for this organisation.</p>}
-            <ul className="inc-list">
-              {list?.map((i) => (
+          </label>
+        </nav>
+
+        <header className="hero" id="top">
+          <div className="hero-copy">
+            <h1>Close credential incidents only when they are actually closed.</h1>
+            <p>Rook investigates a leaked key, fixes it in a safe order, recovers when a step fails and closes the incident only after independent checks pass.</p>
+            <div className="hero-form">
+              <label htmlFor="scenario" className="mono small">Sandbox scenario</label>
+              <div className="row">
+                <select id="scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>
+                  {scenarios.map((s) => <option key={s.name} value={s.name}>{s.name.replace(/_/g, ' ')}</option>)}
+                </select>
+                <button className="btn-dark" disabled={busy || !isAnalyst} onClick={create}>Investigate offboarded contractor</button>
+              </div>
+              <p className="small muted">{scenarios.find((s) => s.name === scenario)?.description}</p>
+              {me && !isAnalyst && <p className="small muted">{who.label} cannot start incidents.</p>}
+            </div>
+          </div>
+          <HeroArt />
+        </header>
+
+        <p className="strip mono" role="note">
+          <span>sandbox</span><span>synthetic keys</span><span>org {me?.org || '…'}</span><span>{me ? me.roles.join(' + ') : 'loading'}</span>
+        </p>
+
+        {err && (
+          <div className="card alert" role="alert">
+            <b>Something went wrong.</b> {err}{' '}
+            <button className="btn-outline" onClick={() => (id ? loadIncident(id) : loadList())}>Retry</button>
+          </div>
+        )}
+        {notice && <div className="card notice" role="status">{notice}</div>}
+
+        <section className="section">
+          <SectionTitle label="Incidents" text="Each run is stored with its plan, checkpoints and audit trail." />
+          {list === null && <p className="muted">Loading…</p>}
+          {list?.length === 0 && <p className="muted">No incidents yet for this organisation. Start one above.</p>}
+          <ul className="chips">
+            {list?.map((i) => {
+              const st = INCIDENT_STATE[i.status] || INCIDENT_STATE.open
+              return (
                 <li key={i.id}>
-                  <button className={`inc ${i.id === id ? 'sel' : ''}`} onClick={() => { setNotice(null); setId(i.id) }}>
-                    <span>{i.scenario.replace(/_/g, ' ')}</span>
-                    <Pill tone={(INCIDENT_STATE[i.status] || INCIDENT_STATE.open).tone}>{(INCIDENT_STATE[i.status] || INCIDENT_STATE.open).label}</Pill>
-                    <span className="small muted">{i.id} · {time(i.created_at)}</span>
+                  <button className={`chip ${i.id === id ? 'sel' : ''}`} aria-pressed={i.id === id}
+                    onClick={() => { setNotice(null); setId(i.id) }}>
+                    <span className="mono small">{time(i.created_at)}</span>
+                    <b>{i.scenario.replace(/_/g, ' ')}</b>
+                    <Pill tone={st.tone}>{st.label}</Pill>
                   </button>
                 </li>
-              ))}
-            </ul>
-          </section>
-        </aside>
+              )
+            })}
+          </ul>
+        </section>
 
-        <main aria-live="polite">
-          {notice && <div className="panel notice" role="status">{notice}</div>}
-          {!id && <div className="panel empty"><h2>No incident selected</h2>
-            <p className="muted">Start one on the left. Rook will investigate, propose a plan, and wait for approval before anything irreversible.</p></div>}
-          {id && !R && !err && <div className="panel"><p className="muted">Loading incident…</p></div>}
+        <div aria-live="polite">
+          {id && !R && !err && <p className="muted section">Loading incident…</p>}
 
           {R && state && (<>
-            {/* 1. Overview */}
-            <section className="panel overview">
-              <div className="ov-head">
+            {/* Overview */}
+            <section className="section" id="incident">
+              <div className="overview">
                 <div>
-                  <p className="small muted">{R.incident.id} · severity {R.incident.severity} · ticket {R.incident.ticket || 'none'}</p>
-                  <h2 className="title">{R.incident.title}</h2>
+                  <p className="mono small muted">{R.incident.id} · severity {R.incident.severity} · ticket {R.incident.ticket || 'none'}</p>
+                  <h2 className="h2">{R.incident.title}</h2>
+                  <p className="lead">{R.summary}</p>
+                  <div className="row">
+                    {isAnalyst && !d.running && ['ready', 'escalated', 'open', 'awaiting_approval'].includes(R.status) && (
+                      <button className="btn-dark" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/run`, {}), 'Run started.')}>
+                        {R.status === 'ready' ? 'Run plan' : 'Run again'}
+                      </button>
+                    )}
+                    {isAnalyst && d.running && (
+                      <button className="btn-outline" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/cancel`, {}), 'Cancel requested.')}>Cancel run</button>
+                    )}
+                  </div>
                 </div>
-                <Pill tone={state.tone}>{d.running ? 'Running' : state.label}</Pill>
+                <div className={`status-card tone-${state.tone}`}>
+                  <span className="mono small">status</span>
+                  <b>{d.running ? 'Running' : state.label}</b>
+                  <span className="small">{d.running ? 'Rook is making and checking changes.' : state.text}</span>
+                </div>
               </div>
-              <p className="lead">{R.summary}</p>
               <div className="stats">
-                <div><b>{R.actions.filter((a: any) => a.status === 'verified').length}/{R.actions.length}</b><span>actions verified</span></div>
-                <div><b>{R.conditions.filter((c: any) => c.result === true).length}/{R.conditions.length}</b><span>closure checks passing</span></div>
-                <div><b>{R.metrics.failed_tool_calls}</b><span>failed tool calls</span></div>
-                <div><b>{R.metrics.checkpoints}</b><span>checkpoints saved</span></div>
-              </div>
-              <div className="row">
-                {me?.roles.includes('analyst') && !d.running && ['ready', 'escalated', 'open', 'awaiting_approval'].includes(R.status) && (
-                  <button className="primary" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/run`, {}), 'Run started.')}>
-                    {R.status === 'ready' ? 'Run plan' : 'Run again'}
-                  </button>
-                )}
-                {me?.roles.includes('analyst') && d.running && (
-                  <button disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/cancel`, {}), 'Cancel requested.')}>Cancel run</button>
-                )}
+                <Stat dark={false} label="Actions verified" value={`${R.actions.filter((a: any) => a.status === 'verified').length}/${R.actions.length}`} />
+                <Stat dark label="Closure checks passing" value={`${R.conditions.filter((c: any) => c.result === true).length}/${R.conditions.length}`} />
+                <Stat dark label="Failed tool calls" value={R.metrics.failed_tool_calls} />
+                <Stat dark={false} label="Checkpoints saved" value={R.metrics.checkpoints} />
               </div>
             </section>
 
-            {/* 4. Approval */}
+            {/* Approval */}
             {pending.map((a: any) => {
               const ready = a.depends_on.every((x: string) => R.actions.find((y: any) => y.id === x)?.status === 'verified')
               return (
-              <section key={a.id} className="panel approval" aria-labelledby={`ap-${a.id}`}>
-                <h2 id={`ap-${a.id}`}>{ready ? 'Approval needed now' : 'Approval will be needed'}: {ACTION_LABEL[a.type] || a.type}</h2>
-                {!ready && <p className="small">Rook pauses here once the earlier steps are verified. An approver can confirm in advance; policy is still re-checked before it runs.</p>}
-                <p className="lead">{a.summary}</p>
-                <ul className="facts">
-                  <li><b>Why approval:</b> {a.policy.reason}</li>
-                  <li><b>Can it be undone?</b> No. The old key stops working everywhere, permanently.</li>
-                  <li><b>Safety check:</b> it runs only after {a.depends_on.length} earlier steps are verified, and policy is checked again just before it runs.</li>
-                </ul>
-                {me?.roles.includes('approver') ? (
-                  <div className="row">
-                    <button className="danger" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/approve`, {}), 'Approved. Rook is continuing.')}>Approve revocation</button>
-                    <button disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/reject`, { note: 'Rejected from dashboard' }), 'Rejected. The incident will be escalated.')}>Reject</button>
+                <section key={a.id} className="section">
+                  <div className="approval" aria-labelledby={`ap-${a.id}`}>
+                    <div>
+                      <h2 id={`ap-${a.id}`} className="h3"><mark>{ready ? 'Approval needed now' : 'Approval will be needed'}</mark></h2>
+                      <p className="lead">{a.summary}</p>
+                      {!ready && <p className="small">Rook pauses here once the earlier steps are verified. An approver can confirm in advance; policy is re-checked just before it runs.</p>}
+                      <ul className="facts">
+                        <li><b>Why approval:</b> {a.policy.reason}</li>
+                        <li><b>Can it be undone?</b> No. The old key stops working everywhere, permanently.</li>
+                        <li><b>Safety check:</b> runs only after steps {a.depends_on.map((x: string) => R.actions.findIndex((y: any) => y.id === x) + 1).join(', ')} are verified.</li>
+                      </ul>
+                    </div>
+                    <div className="approval-actions">
+                      {isApprover ? (<>
+                        <button className="btn-lime" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/approve`, {}), 'Approved. Rook is continuing.')}>Approve revocation</button>
+                        <button className="btn-ghost" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/reject`, { note: 'Rejected from dashboard' }), 'Rejected. The incident will be escalated.')}>Reject</button>
+                      </>) : <p className="small">Waiting for someone with the approver role. Switch to “Priya” to approve.</p>}
+                    </div>
                   </div>
-                ) : <p className="small muted">Waiting for someone with the approver role. Switch to “Priya” to approve.</p>}
-              </section>
-            )})}
+                </section>
+              )
+            })}
 
-            {/* 2. Graph */}
-            <section className="panel">
-              <h2>Who and what is connected</h2>
-              <Graph graph={R.incident.graph} live={liveState(R.actions, R.incident.graph)} />
+            {/* Graph + findings */}
+            <section className="section">
+              <SectionTitle label="Who and what is connected" text="Discovered by Rook, with each node updated as actions are verified." />
+              <div className="card"><Graph graph={R.incident.graph} live={liveState(R.actions, R.incident.graph)} /></div>
             </section>
 
-            {/* 3. Findings + plan */}
-            <section className="panel">
-              <h2>What Rook found</h2>
+            <section className="section">
+              <SectionTitle label="Findings" text="What the evidence shows, before anything is changed." />
               <ul className="findings">
                 {R.incident.findings.map((f: any, i: number) => (
-                  <li key={i}><Pill tone={f.severity === 'high' ? 'bad' : f.severity === 'medium' ? 'warn' : 'mute'}>{f.severity}</Pill> {f.text}</li>
+                  <li key={i} className="card finding">
+                    <Pill tone={f.severity === 'high' ? 'bad' : f.severity === 'medium' ? 'warn' : 'mute'}>{f.severity}</Pill>
+                    <span>{f.text}</span>
+                  </li>
                 ))}
               </ul>
             </section>
 
-            <section className="panel">
-              <h2>Plan, in safe order</h2>
+            {/* Plan */}
+            <section className="section" id="plan">
+              <SectionTitle label="Plan" text="Steps run in this order. Each one is checked against live state before the next can start." />
               <ol className="plan">
                 {R.actions.map((a: any, i: number) => {
                   const s = actionState(a)
+                  const dark = a.risk === 'high'
                   return (
-                    <li key={a.id} className={`step tone-border-${s.tone}`}>
+                    <li key={a.id} className={`step ${dark ? 'step-dark' : ''}`}>
                       <div className="step-head">
-                        <span className="num">{i + 1}</span>
-                        <b>{ACTION_LABEL[a.type] || a.type}</b>
-                        <span className="muted">{a.target}</span>
-                        {a.risk === 'high' && <Pill tone="bad">irreversible</Pill>}
+                        <span className="num mono">{String(i + 1).padStart(2, '0')}</span>
+                        <h3 className="h4"><mark>{ACTION_LABEL[a.type] || a.type}</mark></h3>
                         <Pill tone={s.tone}>{s.label}</Pill>
+                        {a.risk === 'high' && <Pill tone="bad">irreversible</Pill>}
                       </div>
+                      <p className="mono small target">{a.target}</p>
                       <p>{a.summary}</p>
-                      <p className="small muted">
+                      <p className="small dim">
                         Policy {a.policy.rule}: {a.policy.reason}
                         {a.depends_on.length > 0 && <> · after step {a.depends_on.map((x: string) => R.actions.findIndex((y: any) => y.id === x) + 1).join(', ')}</>}
                         {a.retries > 0 && <> · {a.retries} failed attempt{a.retries > 1 ? 's' : ''}</>}
                       </p>
-                      {a.result?.error && <p className="small tone-text-bad">{a.result.error}</p>}
+                      {a.result?.error && <p className="small err-text">{a.result.error}</p>}
                       {(Object.keys(a.evidence || {}).length > 0) && (
-                        <details><summary>Verification evidence</summary><pre>{JSON.stringify(a.evidence, null, 2)}</pre></details>
+                        <details><summary><Arrow /> Verification evidence</summary><pre>{JSON.stringify(a.evidence, null, 2)}</pre></details>
                       )}
                     </li>
                   )
@@ -262,100 +288,181 @@ export default function Page() {
               </ol>
             </section>
 
-            {/* 6. Failure + recovery */}
             <Recovery R={R} audit={d.audit} checkpoints={d.checkpoints} />
 
-            {/* 7. Verification */}
-            <section className="panel">
-              <h2>Independent verification</h2>
-              <p className="small muted">These checks were fixed before any change was made. They are measured by probing live state, never by trusting a tool’s reply.</p>
-              <table>
-                <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Evidence</th></tr></thead>
-                <tbody>
-                  {R.conditions.map((c: any) => {
-                    const r = c.result === true ? ['ok', 'Pass'] : c.result === false ? ['bad', 'Fail'] : ['warn', c.evaluated_at ? 'Inconclusive' : 'Not checked yet']
-                    return (
-                      <tr key={c.id}>
-                        <td>{c.description}<div className="small muted">{c.expected}</div></td>
-                        <td><Pill tone={r[0]}>{r[1]}</Pill></td>
-                        <td><code className="small">{Object.entries(c.evidence || {}).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(' · ') || '—'}</code></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            {/* Verification */}
+            <section className="section" id="verify">
+              <SectionTitle label="Verification" text="Fixed before any change was made, and measured by probing live state, never by trusting a tool’s reply." />
+              <div className="card table-card">
+                <table>
+                  <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Evidence</th></tr></thead>
+                  <tbody>
+                    {R.conditions.map((c: any) => {
+                      const r = c.result === true ? ['ok', 'Pass'] : c.result === false ? ['bad', 'Fail'] : ['warn', c.evaluated_at ? 'Inconclusive' : 'Not checked yet']
+                      return (
+                        <tr key={c.id}>
+                          <td>{c.description}<div className="small muted">{c.expected}</div></td>
+                          <td><Pill tone={r[0]}>{r[1]}</Pill></td>
+                          <td><code className="small">{Object.entries(c.evidence || {}).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(' · ') || '—'}</code></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </section>
 
-            {/* 5. Timeline */}
-            <section className="panel">
-              <h2>Live timeline <span className="muted small">({d.audit.length} audit events, append-only)</span></h2>
-              <ol className="timeline" ref={tl} tabIndex={0} aria-label="Audit events, oldest first">
-                {d.audit.map((e: any) => (
-                  <li key={e.n} className={`tone-text-${eventTone(e.event)}`}>
-                    <time className="small muted">{time(e.ts)}</time> {eventText(e)}
-                  </li>
-                ))}
-              </ol>
+            {/* Timeline */}
+            <section className="section" id="timeline">
+              <SectionTitle label="Timeline" text={`${d.audit.length} audit events, append-only, straight from the backend.`} />
+              <div className="soft">
+                <ol className="timeline" ref={tl} tabIndex={0} aria-label="Audit events, oldest first">
+                  {d.audit.map((e: any) => (
+                    <li key={e.n} className={`ev-${eventTone(e.event)}`}>
+                      <time className="mono small">{time(e.ts)}</time><span>{eventText(e)}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
             </section>
 
-            {/* 8. Report */}
-            <section className="panel">
-              <h2>Incident report</h2>
-              <p className="lead">{R.summary}</p>
-              {R.closure_blocked_reason && <p><b>Why it is not closed:</b> {R.closure_blocked_reason}</p>}
-              <ul className="facts">
-                {Object.entries(R.invariants).map(([k, v]) => (
-                  <li key={k}><Pill tone={v ? 'ok' : 'bad'}>{v ? 'yes' : 'no'}</Pill> {k.replace(/_/g, ' ')}</li>
-                ))}
-              </ul>
-              {R.approvals.length > 0 && (
-                <p className="small">Approvals: {R.approvals.map((a: any) => `${a.decision} by ${a.by} at ${time(a.ts)}`).join('; ')}</p>
-              )}
-              <button onClick={() => {
-                const blob = new Blob([JSON.stringify({ report: R, audit: d.audit }, null, 2)], { type: 'application/json' })
-                const u = URL.createObjectURL(blob); const el = document.createElement('a')
-                el.href = u; el.download = `${R.incident.id}-report.json`; el.click(); URL.revokeObjectURL(u)
-              }}>Download report and audit trail (JSON)</button>
+            {/* Report */}
+            <section className="section">
+              <SectionTitle label="Report" text="What a reviewer needs to sign off, or to pick up an escalation." />
+              <div className="report">
+                <div>
+                  <p className="lead">{R.summary}</p>
+                  {R.closure_blocked_reason && <p className="small"><b>Why it is not closed:</b> {R.closure_blocked_reason}</p>}
+                  {R.approvals.length > 0 && <p className="small">Approvals: {R.approvals.map((a: any) => `${a.decision} by ${a.by} at ${time(a.ts)}`).join('; ')}</p>}
+                  <button className="btn-dark" onClick={() => {
+                    const blob = new Blob([JSON.stringify({ report: R, audit: d.audit }, null, 2)], { type: 'application/json' })
+                    const u = URL.createObjectURL(blob); const el = document.createElement('a')
+                    el.href = u; el.download = `${R.incident.id}-report.json`; el.click(); URL.revokeObjectURL(u)
+                  }}>Download report + audit trail</button>
+                </div>
+                <ul className="facts invariants">
+                  {Object.entries(R.invariants).map(([k, v]) => (
+                    <li key={k}><Pill tone={v ? 'ok' : 'bad'}>{v ? 'yes' : 'no'}</Pill> {k.replace(/_/g, ' ')}</li>
+                  ))}
+                </ul>
+              </div>
             </section>
           </>)}
-        </main>
+
+          {!id && !err && (
+            <section className="section">
+              <div className="soft cta">
+                <div>
+                  <h2 className="h3">Try the signature scenario</h2>
+                  <p>billing-app’s config API fails once mid-fix. Watch Rook save a checkpoint, inspect what really happened, retry safely and still close with evidence.</p>
+                </div>
+                <Star big />
+              </div>
+            </section>
+          )}
+        </div>
+
+        <footer className="footer mono small">Keywarden · Rook agent · sandboxed mock integrations, synthetic credentials only</footer>
       </div>
     </div>
+  )
+}
+
+function SectionTitle({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="section-title">
+      <h2><mark>{label}</mark></h2>
+      <p className="small">{text}</p>
+    </div>
+  )
+}
+
+function Stat({ label, value, dark }: { label: string; value: any; dark: boolean }) {
+  return (
+    <div className={`stat ${dark ? 'stat-dark' : ''}`}>
+      <span className="small"><mark>{label}</mark></span>
+      <b>{value}</b>
+    </div>
+  )
+}
+
+const Arrow = () => (
+  <svg className="arrow" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <circle cx="12" cy="12" r="11" fill="currentColor" />
+    <path d="M8 16 L16 8 M10 8 H16 V14" stroke="var(--lime)" strokeWidth="2" fill="none" strokeLinecap="round" />
+  </svg>
+)
+
+const Star = ({ big }: { big?: boolean }) => (
+  <svg viewBox="0 0 24 24" width={big ? 96 : 20} height={big ? 96 : 20} aria-hidden="true" className={big ? 'star-big' : ''}>
+    <path d="M12 0 C13 8 16 11 24 12 C16 13 13 16 12 24 C11 16 8 13 0 12 C8 11 11 8 12 0Z" fill={big ? 'var(--lime)' : 'currentColor'} stroke={big ? 'var(--ink)' : 'none'} />
+  </svg>
+)
+
+function HeroArt() {
+  return (
+    <svg className="hero-art" viewBox="0 0 320 240" role="img" aria-label="A key inside orbit rings, with check marks">
+      <ellipse cx="170" cy="130" rx="130" ry="46" fill="none" stroke="var(--ink)" strokeWidth="1.5" transform="rotate(-12 170 130)" />
+      <ellipse cx="170" cy="130" rx="110" ry="34" fill="none" stroke="var(--ink)" strokeWidth="1.5" transform="rotate(14 170 130)" />
+      <g transform="translate(110 70) rotate(-30 50 60)">
+        <circle cx="40" cy="60" r="34" fill="var(--lime)" stroke="var(--ink)" strokeWidth="3" />
+        <circle cx="40" cy="60" r="12" fill="#fff" stroke="var(--ink)" strokeWidth="3" />
+        <rect x="72" y="52" width="92" height="16" rx="3" fill="var(--ink)" />
+        <rect x="132" y="66" width="12" height="20" fill="var(--ink)" />
+        <rect x="152" y="66" width="12" height="14" fill="var(--ink)" />
+      </g>
+      <g transform="translate(250 40)"><circle r="18" fill="var(--ink)" /><path d="M-7 0 L-2 6 L8 -6" stroke="var(--lime)" strokeWidth="3" fill="none" strokeLinecap="round" /></g>
+      <g transform="translate(286 92)"><circle r="14" fill="var(--lime)" stroke="var(--ink)" strokeWidth="2" /><path d="M-5 0 L-1 4 L6 -4" stroke="var(--ink)" strokeWidth="2.5" fill="none" strokeLinecap="round" /></g>
+      <g transform="translate(262 196)"><circle r="16" fill="var(--ink)" /><path d="M-6 -6 L6 6 M6 -6 L-6 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" /></g>
+      <path d="M40 190 C42 202 46 206 58 208 C46 210 42 214 40 226 C38 214 34 210 22 208 C34 206 38 202 40 190Z" fill="var(--ink)" />
+      <path d="M70 40 C71 46 73 48 79 49 C73 50 71 52 70 58 C69 52 67 50 61 49 C67 48 69 46 70 40Z" fill="var(--ink)" />
+      <circle cx="96" cy="200" r="5" fill="var(--lime)" stroke="var(--ink)" /><circle cx="214" cy="20" r="4" fill="var(--lime)" />
+    </svg>
   )
 }
 
 function Recovery({ R, audit, checkpoints }: { R: any; audit: any[]; checkpoints: any[] }) {
   const failures = R.tool_calls.filter((c: any) => c.outcome !== 'ok')
   const restored = audit.filter((e) => e.event === 'checkpoint_restored')
-  if (!failures.length && !restored.length) {
-    return (
-      <section className="panel">
-        <h2>Failures and recovery</h2>
-        <p className="muted">No failed tool calls so far. {checkpoints.length} checkpoints saved.</p>
-      </section>
-    )
-  }
   return (
-    <section className="panel recovery">
-      <h2>Failures and recovery</h2>
-      {restored.map((e) => <p key={e.n}><Pill tone="warn">restart</Pill> {eventText(e)}</p>)}
-      {failures.map((f: any) => {
-        const a = R.actions.find((x: any) => x.id === f.action)
-        const after = audit.filter((e) => e.n > 0 && e.data?.action === f.action && e.ts >= f.ts)
-        const reconcile = after.find((e) => e.event.startsWith('reconcile'))
-        const cp = checkpoints.find((c) => c.ts >= f.ts && c.data?.action === f.action)
-        const next = R.tool_calls.find((c: any) => c.action === f.action && c.attempt === f.attempt + 1)
-        return (
-          <ol key={f.n} className="chain">
-            <li className="tone-text-bad"><b>Attempt {f.attempt} of “{ACTION_LABEL[a?.type] || f.action}” on {a?.target}:</b> {f.data.error || f.outcome}</li>
-            {cp && <li>Checkpoint #{cp.n} saved with the step marked “outcome unclear”.</li>}
-            {reconcile && <li className="tone-text-warn">{eventText(reconcile)}.</li>}
-            {next && <li className={next.outcome === 'ok' ? 'tone-text-ok' : 'tone-text-bad'}>Attempt {next.attempt}: {next.outcome === 'ok' ? 'succeeded (same idempotency key)' : next.data.error || next.outcome}</li>}
-            {a && a.status === 'verified' && f === failures.filter((x: any) => x.action === f.action).slice(-1)[0] && <li className="tone-text-ok">Independently verified after recovery.</li>}
-            {a && a.status === 'failed' && f === failures.filter((x: any) => x.action === f.action).slice(-1)[0] && <li className="tone-text-bad">Stopped: {a.result.error} Escalated instead of retrying forever.</li>}
-          </ol>
-        )
-      })}
+    <section className="section">
+      <SectionTitle label="Failure and recovery" text="What went wrong, what Rook checked, and what it did about it." />
+      {!failures.length && !restored.length ? (
+        <div className="soft"><p className="muted">No failed tool calls so far. {checkpoints.length} checkpoints saved.</p></div>
+      ) : (
+        <div className="dark-panel">
+          {restored.map((e) => <div key={e.n} className="col"><span className="mono small lime">restart</span><p>{eventText(e)}</p></div>)}
+          {failures.map((f: any) => {
+            const a = R.actions.find((x: any) => x.id === f.action)
+            const after = audit.filter((e) => e.data?.action === f.action && e.ts >= f.ts)
+            const reconcile = after.find((e) => e.event.startsWith('reconcile'))
+            const cp = checkpoints.find((c) => c.ts >= f.ts && c.data?.action === f.action)
+            const next = R.tool_calls.find((c: any) => c.action === f.action && c.attempt === f.attempt + 1)
+            const last = f === failures.filter((x: any) => x.action === f.action).slice(-1)[0]
+            return (
+              <div key={f.n} className="recovery-row">
+                <div className="col">
+                  <span className="mono small lime">01 · failure</span>
+                  <p><b>Attempt {f.attempt}: {ACTION_LABEL[a?.type] || f.action}</b> on {a?.target}</p>
+                  <p className="small dim">{f.data.error || f.outcome}</p>
+                </div>
+                <div className="col">
+                  <span className="mono small lime">02 · checkpoint + inspect</span>
+                  {cp && <p>Checkpoint #{cp.n} saved, step marked “outcome unclear”.</p>}
+                  {reconcile && <p className="small dim">{eventText(reconcile)}.</p>}
+                </div>
+                <div className="col">
+                  <span className="mono small lime">03 · result</span>
+                  {next && <p>Attempt {next.attempt}: {next.outcome === 'ok' ? 'succeeded with the same idempotency key.' : next.data.error || next.outcome}</p>}
+                  {a && last && a.status === 'verified' && <p className="lime">Independently verified after recovery.</p>}
+                  {a && last && a.status === 'failed' && <p className="err-text-dark">Stopped: {a.result.error} Escalated instead of retrying forever.</p>}
+                  {!next && a && !['verified', 'failed'].includes(a.status) && <p className="small dim">In progress…</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </section>
   )
 }
