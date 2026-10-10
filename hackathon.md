@@ -34,6 +34,8 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 
 **09:30: Entire on.** The team reversed the earlier skip. Entire now records the agent sessions and links them to commits through `Entire-Checkpoint` trailers.
 
+**18:30: no AWS.** The team didn't qualify for the AWS credit, so the Lightsail deploy is gone. The live demo now runs locally and is shared through Cloudflare Tunnel (`scripts/share.sh`). The WSL setup script no longer collides with an existing NodeSource Node install.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.
