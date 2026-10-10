@@ -27,6 +27,11 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 - New: automatic rollback of a service broken by its update, leaked-key removal from the repo after revocation, ownerless-account follow-ups, a hash-chained audit log that blocks closure if tampered with, a Markdown evidence pack, and time-to-contain metrics. 69 tests.
 - Dashboard restyled after the team's reference design.
 
+**09:06–: restructured as B2B IT incident resolution.**
+- Rook is now an operations agent for growing companies. The engine stayed the same; incident types became playbooks (`rook/playbooks.py`). Credential offboarding is one playbook.
+- New **service outage** playbook: alert → deploy correlation → pause pipeline → rollback to a known-good revision → resume with the bad revision blocked, with 7 closure checks and policy rules R4 (no rollback while auto-deploy would undo it) and R8 (only roll back unattended to a proven revision). 80 tests.
+- Builds now target Ubuntu on WSL: `scripts/setup-wsl.sh`, `scripts/dev.sh`, LF line endings enforced, and the full suite passes on Python 3.14 (the Ubuntu 26.04 default).
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

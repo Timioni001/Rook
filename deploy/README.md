@@ -1,4 +1,4 @@
-# Going live: neatlogs → AWS → Cloudflare
+# Going live from Ubuntu on WSL: neatlogs → AWS → Cloudflare
 
 You end up with:
 
@@ -10,16 +10,23 @@ Do the steps in order. Each one ends with a check, so you know it worked before 
 
 ---
 
-## 0. One-time tools on your computer
+## 0. One-time setup on Ubuntu (WSL)
 
-| Tool | Install | Check |
-|---|---|---|
-| Git + this repo | `git clone https://github.com/Timioni001/Rook && cd Rook && git checkout keywarden-build-v7m54f` | `ls rook` |
-| Docker Desktop | https://docs.docker.com/get-docker/ (start it after installing) | `docker run --rm hello-world` |
-| AWS CLI v2 | https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html | `aws --version` |
-| Lightsail plugin | https://docs.aws.amazon.com/en_us/lightsail/latest/userguide/amazon-lightsail-install-software.html (`lightsailctl`) | `lightsailctl --version` |
-| Node 18+ | https://nodejs.org | `node -v` |
-| Python 3.10–3.13 | https://python.org | `python3 --version` |
+Everything below runs in an **Ubuntu terminal on WSL** (written for Ubuntu 26.04, also fine on 24.04). Python 3.14, which is the Ubuntu 26.04 default, passes the full test suite.
+
+1. **Docker:** install Docker Desktop for Windows from https://docs.docker.com/desktop/setup/install/windows-install/. Then go to **Settings → Resources → WSL integration**, turn on your Ubuntu distro, and open a new Ubuntu terminal.
+2. **Clone inside WSL, not under `/mnt/c`.** Builds are much faster there and the scripts keep their Linux line endings:
+   ```bash
+   cd ~
+   git clone https://github.com/Timioni001/Rook && cd Rook && git checkout keywarden-build-v7m54f
+   ```
+3. **Run the setup script.** It installs the system packages, Python venv, dashboard packages, AWS CLI v2 and `lightsailctl`, then runs the tests:
+   ```bash
+   ./scripts/setup-wsl.sh            # asks for your sudo password once
+   source .venv/bin/activate
+   ```
+   **Check:** the script ends with a version table, `docker` is listed (not "not reachable"), and the tests say `passed`.
+4. **Try it locally:** run `./scripts/dev.sh`, then open http://localhost:3000 in your Windows browser. WSL forwards localhost for you.
 
 ---
 
@@ -27,15 +34,14 @@ Do the steps in order. Each one ends with a check, so you know it worked before 
 
 1. Sign in at https://app.neatlogs.com and create a project, for example `rook`.
 2. Open the project settings, copy the **project API key**, and keep it private.
-3. In a terminal in the repo:
+3. In your Ubuntu terminal, in the repo, with the venv active:
    ```bash
-   python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   export NEATLOGS_API_KEY=paste-your-key                  # Windows PowerShell: $env:NEATLOGS_API_KEY="..."
+   read -rs NEATLOGS_API_KEY && export NEATLOGS_API_KEY    # paste the key, press Enter; it isn't echoed or saved to history
    python -m neatlogs doctor --probe                        # SDK self-test against the real ingest
-   python -m rook.demo                                      # one full incident, with a failure and recovery
+   python -m rook.demo                                      # offboarding incident: failure, recovery, approval
+   python -m rook.demo --scenario outage                    # service outage: bad deploy, rollback, pipeline
    ```
-4. **Check:** the demo prints `"status": "closed_verified"` and `"span_export_failures": 0`. In the neatlogs dashboard, under **Traces** or **Sessions**, a trace for workflow `rook-incident-response` appears within a few seconds. Open it and you'll see guardrail spans showing Passed/Blocked and tool spans for each adapter call.
+4. **Check:** each demo prints `"status": "closed_verified"` and `"span_export_failures": 0`. In the neatlogs dashboard, under **Traces** or **Sessions**, a trace for workflow `rook-incident-response` appears within a few seconds. Open it and you'll see guardrail spans showing Passed/Blocked and tool spans for each adapter call.
 5. **Before/after evidence**, for the submission:
    ```bash
    git stash -u 2>/dev/null; git checkout 0817443
@@ -44,8 +50,10 @@ Do the steps in order. Each one ends with a check, so you know it worked before 
    git checkout keywarden-build-v7m54f
    ROOK_DEMO_LABEL=after python -m rook.demo --scenario signature
    ROOK_DEMO_LABEL=after python -m rook.demo --scenario persistent
+   ROOK_DEMO_LABEL=after python -m rook.demo --scenario outage
+   ROOK_DEMO_LABEL=after python -m rook.demo --scenario outage_wrong_cause
    ```
-   Copy the four trace URLs into `evidence/neatlogs-traces.md`. Each trace carries a `version:<commit>` tag, so you can filter before and after apart.
+   Copy the trace URLs into `evidence/neatlogs-traces.md`. Each trace carries a `version:<commit>` tag, so you can filter before and after apart.
 6. Optional dashboard setup, both in neatlogs: add a **Detection** with a regex on `sk_test_SYNTH`, which should never fire and acts as a leak tripwire. Add an **Alert** on `closure.evaluate` spans where `neatlogs.guardrail.passed = false`, which flags incidents that didn't close.
 
 ---
@@ -64,8 +72,8 @@ Do the steps in order. Each one ends with a check, so you know it worked before 
    export AWS_REGION=us-east-1
    ./deploy/aws-lightsail.sh
    ```
-   The script builds the image, creates a `nano` container service called `rook`, pushes and deploys, then prints `Rook is live at: https://rook.xxxxx.us-east-1.cs.amazonlightsail.com/`. The first deploy takes a few minutes.
-4. **Check:** open that URL. The Rook dashboard loads. Click **Investigate offboarded contractor**, then **Run plan**. A new session appears in neatlogs.
+   The script first checks Docker, the AWS CLI, `lightsailctl` and your credentials, and says what's missing. Then it builds the image, creates a `nano` container service called `rook`, pushes and deploys, then prints `Rook is live at: https://rook.xxxxx.us-east-1.cs.amazonlightsail.com/`. The first deploy takes a few minutes.
+4. **Check:** open that URL and the Rook dashboard loads. Pick an incident type, click **Investigate**, then click **Run plan**. A new session appears in neatlogs.
 5. Look up the current price of the `nano` power in the Lightsail console before leaving it running. After judging, run `aws lightsail delete-container-service --service-name rook --region $AWS_REGION`.
 
 ---
@@ -83,6 +91,7 @@ The dashboard is static files. A small Pages Function (`web/functions/api/[[path
    npx wrangler login                      # opens the browser once
    npx wrangler pages deploy out --project-name rook
    ```
+   On WSL, `wrangler login` prints a URL. If no browser window opens, paste that URL into your Windows browser; the login callback still reaches WSL. If it doesn't, create an API token in the Cloudflare dashboard (**My Profile → API Tokens**, using the "Edit Cloudflare Workers" template) and run `read -rs CLOUDFLARE_API_TOKEN && export CLOUDFLARE_API_TOKEN` instead of logging in.
    The first run creates the `rook` Pages project and prints a `https://rook-xxx.pages.dev` URL.
 3. Point the proxy at AWS: Cloudflare dashboard → **Workers & Pages → rook → Settings → Variables and Secrets → Add**, name `ROOK_API_ORIGIN`, value the Lightsail URL from step 2 without a trailing slash. Save, then redeploy (`npx wrangler pages deploy out --project-name rook`) so the function picks it up.
 4. **Check:** `https://rook-xxx.pages.dev/api/health` returns `{"ok":true,...}`, and the dashboard runs an incident end to end. Use the `pages.dev` link as the demo link in the submission.
@@ -93,8 +102,7 @@ The dashboard is static files. A small Pages Function (`web/functions/api/[[path
 ## Run everything locally instead
 
 ```bash
-uvicorn rook.api:create_app --factory --port 8000      # terminal 1
-cd web && npm run dev                                   # terminal 2 → http://localhost:3000
+./scripts/dev.sh                                        # API :8000 + dashboard :3000
 # or the single container:
 docker build -t rook . && docker run --rm -p 8000:8000 -e NEATLOGS_API_KEY rook   # http://localhost:8000
 ```
