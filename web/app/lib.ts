@@ -64,6 +64,7 @@ export const ACTION_LABEL: Record<string, string> = {
   issue_replacement: 'Issue replacement key',
   update_dependent: 'Move service to new key',
   revoke_credential: 'Revoke old key',
+  scrub_exposed_secret: 'Remove leaked key from code',
 }
 
 const EVENT_TEXT: Record<string, (d: any) => string> = {
@@ -99,6 +100,9 @@ const EVENT_TEXT: Record<string, (d: any) => string> = {
   incident_awaiting_approval: () => 'Paused for approval',
   ticket_updated: (d) => `Ticket ${d.ticket} updated (${d.status})`,
   cancelled: () => 'Run cancelled',
+  rolled_back: (d) => `Rolled ${d.target} back to the previous key so it keeps working`,
+  rollback_skipped: (d) => `No rollback for ${d.action}: ${d.reason}`,
+  rollback_failed: (d) => `Rollback of ${d.action} failed: ${d.error}`,
   cancel_requested: (d) => `Cancel requested by ${d.by}`,
 }
 
@@ -110,7 +114,7 @@ export function eventText(e: any): string {
 export function eventTone(name: string): string {
   if (/fail|permanent|inconclusive|escalated|blocked|rejected/.test(name)) return 'bad'
   if (/transient|timeout|reconciled_not|restored|needs_approval|awaiting/.test(name)) return 'warn'
-  if (/verified|granted|closed|authorized/.test(name)) return 'ok'
+  if (/verified|granted|closed|authorized|rolled_back/.test(name)) return 'ok'
   return 'mute'
 }
 

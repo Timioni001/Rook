@@ -13,6 +13,7 @@ ALLOWED = {
     "issue_replacement": {"vault"},
     "update_dependent": {"app", "cloud"},
     "revoke_credential": {"vault"},
+    "scrub_exposed_secret": {"github"},
 }
 NEEDS_APPROVAL = {"revoke_credential"}     # irreversible and production-affecting
 
@@ -24,7 +25,7 @@ def owner_of(sb, a):
             return sb.account_service(p["service"]).owner(a.target)
         if a.type in ("issue_replacement", "revoke_credential"):
             return sb.vault.owner(a.target)
-        if a.type == "update_dependent":
+        if a.type in ("update_dependent", "scrub_exposed_secret"):
             return sb.vault.owner(p["cred_id"])
     except KeyError:
         return None
@@ -65,6 +66,16 @@ def decide(a, inc, sb, plan, approval=None):
             return "blocked", "The approval did not come from an approver in this organisation.", "R5-approval"
         return "authorized", f"Allowed by policy and approved by {approval['by']}.", "R5-approval"
     return "authorized", "Allowed by policy: in scope, owned by the subject, reversible.", "R0-default"
+
+
+def may_compensate(sb, a, inc):
+    """R7: rolling a dependent back to its previous key is allowed only while that key is still valid
+    and the dependent belongs to the incident's credential. It restores a known-good state."""
+    if a.type != "update_dependent" or owner_of(sb, a) != inc.subject:
+        return False, "Rollback only applies to services of this incident's credential."
+    if not sb.vault.authenticate_fp(a.params["old_fp"]):
+        return False, "The previous key is no longer valid, so rolling back would not help."
+    return True, "Previous key is still valid; restoring the last known-good configuration."
 
 
 def _already_moved(sb, a):

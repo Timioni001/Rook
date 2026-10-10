@@ -22,6 +22,11 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 
 **08:25: docs and evidence.** README, `evidence/` (test results, demo script, security notes, before/after runs) and honest status pages for neatlogs dashboard traces, Entire checkpoints and the cfo.ai plan, which are still pending.
 
+**08:35–09:05: Rook name, Cloudflare and features for long-standing problems.**
+- Product renamed to Rook. A Cloudflare Pages Function proxies the static dashboard's `/api` to the AWS container, checked locally with `wrangler pages dev`.
+- New: automatic rollback of a service broken by its update, leaked-key removal from the repo after revocation, ownerless-account follow-ups, a hash-chained audit log that blocks closure if tampered with, a Markdown evidence pack, and time-to-contain metrics. 69 tests.
+- Dashboard restyled after the team's reference design.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

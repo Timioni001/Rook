@@ -47,6 +47,7 @@ def test_full_flow_over_http(client):
 SENSITIVE = [
     ("get", "/api/me"), ("get", "/api/scenarios"), ("get", "/api/incidents"),
     ("post", "/api/incidents"), ("get", "/api/incidents/{iid}"), ("get", "/api/incidents/{iid}/events"),
+    ("get", "/api/incidents/{iid}/evidence"),
     ("post", "/api/incidents/{iid}/run"), ("post", "/api/incidents/{iid}/cancel"),
     ("post", "/api/incidents/{iid}/actions/{aid}/approve"), ("post", "/api/incidents/{iid}/actions/{aid}/reject"),
 ]
@@ -153,3 +154,14 @@ def test_no_secrets_in_api_responses(client):
     client.post(f"/api/incidents/{iid}/actions/{revoke_id(client, iid)}/approve", headers=h(APPROVER))
     body = client.get(f"/api/incidents/{iid}", headers=h(ANALYST)).text
     assert "sk_test_SYNTH" not in body and "closed_verified" in body
+
+
+def test_evidence_pack_download(client):
+    iid = new_incident(client)
+    client.post(f"/api/incidents/{iid}/run", headers=h(ANALYST))
+    client.post(f"/api/incidents/{iid}/actions/{revoke_id(client, iid)}/approve", headers=h(APPROVER))
+    r = client.get(f"/api/incidents/{iid}/evidence", headers=h(VIEWER))
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown")
+    body = r.text
+    assert "Status: **closed_verified**" in body and "approved by u-priya" in body
+    assert "Hash chain over" in body and "intact" in body and "sk_test_SYNTH" not in body

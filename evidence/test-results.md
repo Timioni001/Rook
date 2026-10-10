@@ -4,7 +4,7 @@ Generated from real runs in the build environment on 2026-10-10 (UTC). Re-run wi
 
 ## Backend: `python -m pytest -v`
 
-Result: **58 passed** at the time of the raw output below. The current branch has **60** (2 more neatlogs feature tests) (Python 3.13, pytest). The one warning comes from Starlette's test client.
+Result: **58 passed** at the time of the raw output below. The current branch has **69**: 2 neatlogs feature tests, an evidence-pack API test, and 6 tests for rollback, repo cleanup, ownerless accounts, a tampered audit log and incident metrics (Python 3.13, pytest). The one warning comes from Starlette's test client.
 
 ### Required scenarios → tests
 

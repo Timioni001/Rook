@@ -123,6 +123,18 @@ class SourceHost(AccountService):
                         out.append(f"{repo}/{path}")
         return out
 
+    def scrub_secret(self, path, f, idem):
+        """Replace the leaked value in a tracked file with a placeholder (history still holds it)."""
+        def fn():
+            repo, file = path.split("/", 1)
+            txt = self.s["github"]["repos"][repo][file]
+            for token in txt.replace("=", " ").split():
+                if token.startswith("sk_test_SYNTH") and fp(token) == f:
+                    txt = txt.replace(token, "<removed by Rook: key rotated>")
+            self.s["github"]["repos"][repo][file] = txt
+            return {"path": path, "scrubbed": True}
+        return self.core.mutate("github.scrub", idem, fn)
+
     def commit_history(self, path):
         repo, file = path.split("/", 1)
         return [e for e in self.s["github"]["audit_log"] if e["repo"] == repo and e["path"] == file]
@@ -309,6 +321,26 @@ class Sandbox:
         kind, name = dep.split(":", 1)
         fps = self.apps.config_fps(name) if kind == "app" else self.cloud.env_fps(name)
         return next(iter(fps.values()), None)
+
+    def restore_dependent(self, dep, cred_id, version, idem):
+        """Compensating action: put a dependent back on a known-good (still valid) key version."""
+        kind, name = dep.split(":", 1)
+        value = next(x["value"] for x in self.vault.creds()[cred_id]["versions"] if x["v"] == version)
+
+        def fn():
+            cfg = self.apps.apps()[name]["config"] if kind == "app" else self.cloud.services()[name]["env"]
+            key = next(k for k, v in cfg.items() if v.startswith("sk_test_SYNTH"))
+            cfg[key] = value
+            return {"dependent": dep, "restored_version": version, "config_fp": fp(value)}
+        return self.mutate(f"{kind}.restore", idem, fn)
+
+    def ownerless_accounts(self):
+        out = []
+        for name in ("github", "cloud", "pm"):
+            for u, a in self.account_service(name).accounts().items():
+                if not a.get("owner"):
+                    out.append({"service": name, "user": u, "status": a["status"]})
+        return out
 
     def update_dependent(self, dep, cred_id, idem):
         kind, name = dep.split(":", 1)

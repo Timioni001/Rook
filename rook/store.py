@@ -1,4 +1,4 @@
-import json, re, sqlite3, threading, time
+import hashlib, json, re, sqlite3, threading, time
 from .domain import Action, Condition, Incident, fp
 
 SECRET = re.compile(r"sk_test_SYNTH_[\w-]+")
@@ -21,6 +21,8 @@ class Store:
         self._x("CREATE TABLE IF NOT EXISTS tool_calls(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, action_id TEXT, attempt INTEGER, outcome TEXT, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS approvals(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, action_id TEXT, decision TEXT, principal TEXT, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS runs(incident_id TEXT PRIMARY KEY, owner TEXT, expires REAL)")
+        if "hash" not in [r[1] for r in self._x("PRAGMA table_info(audit)")]:
+            self._x("ALTER TABLE audit ADD COLUMN hash TEXT")
         self._x("CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'audit is append-only'); END")
         self._x("CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'audit is append-only'); END")
 
@@ -72,13 +74,35 @@ class Store:
         return [Condition.model_validate_json(r[0]) for r in rows]
 
     # audit + checkpoints (secrets redacted before write)
+    @staticmethod
+    def _chain(prev, ts, iid, event, data):
+        return hashlib.sha256(json.dumps([prev, repr(ts), iid, event, data]).encode()).hexdigest()
+
     def audit(self, iid, event, data=None):
-        self._x("INSERT INTO audit(ts,incident_id,event,data) VALUES(?,?,?,?)",
-                (time.time(), iid, event, redact(data or {})))
+        """Append-only and hash-chained: each event commits to the one before it."""
+        with self.lock:
+            last = self.c.execute("SELECT hash FROM audit ORDER BY n DESC LIMIT 1").fetchone()
+            ts, body = time.time(), redact(data or {})
+            h = self._chain(last[0] if last and last[0] else "genesis", ts, iid, event, body)
+            self.c.execute("INSERT INTO audit(ts,incident_id,event,data,hash) VALUES(?,?,?,?,?)",
+                           (ts, iid, event, body, h))
+            self.c.commit()
+
+    def verify_chain(self):
+        """Recompute the audit hash chain. Returns (intact, first_bad_event_number, events_checked)."""
+        prev, n = "genesis", 0
+        for n_, ts, iid, event, data, h in self._x("SELECT n,ts,incident_id,event,data,hash FROM audit ORDER BY n"):
+            n += 1
+            if h is None:                          # rows written before chaining existed
+                continue
+            if self._chain(prev, ts, iid, event, data) != h:
+                return False, n_, n
+            prev = h
+        return True, None, n
 
     def audit_events(self, iid):
-        return [{"n": r[0], "ts": r[1], "event": r[2], "data": json.loads(r[3])}
-                for r in self._x("SELECT n,ts,event,data FROM audit WHERE incident_id=? ORDER BY n", (iid,))]
+        return [{"n": r[0], "ts": r[1], "event": r[2], "data": json.loads(r[3]), "hash": r[4]}
+                for r in self._x("SELECT n,ts,event,data,hash FROM audit WHERE incident_id=? ORDER BY n", (iid,))]
 
     def checkpoint(self, iid, label, data):
         self._x("INSERT INTO checkpoints(ts,incident_id,label,data) VALUES(?,?,?,?)",

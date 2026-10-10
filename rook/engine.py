@@ -23,6 +23,7 @@ TOOL_DOCS = {
     "issue_replacement": "Create a new version of a credential in the vault; old version stays valid",
     "update_dependent": "Point an application or cloud service at the newest credential version",
     "revoke_credential": "Permanently revoke one credential version in the vault",
+    "scrub_exposed_secret": "Replace a leaked key in a tracked file with a placeholder",
 }
 
 
@@ -59,6 +60,8 @@ def investigate(sb, subject):
                     "unrecorded_dependents": [d for d in deps if d not in m["used_by"]],
                     "exposed_in": exposed,
                     "exposure_history": [h for p in exposed for h in sb.github.commit_history(p)]})
+    for o in sb.ownerless_accounts():          # not this subject's, but found on the same sweep
+        rel.append({"rel": "ownerless_account", **o})
     return person, rel, build_graph(subject, person, rel), findings(subject, person, rel)
 
 
@@ -112,6 +115,11 @@ def findings(subject, person, rel):
         for h in r["exposure_history"]:
             out.append({"severity": "high", "text": f"The key is committed in {h['repo']}/{h['path']} "
                         f"(by {h['actor']} on {h['at'][:10]}), so it must be treated as leaked.", "evidence": h})
+    for r in rel:
+        if r["rel"] == "ownerless_account":
+            out.append({"severity": "medium", "text": f"{r['service']} account '{r['user']}' has no owner in any "
+                        "directory. Rook will not touch access it cannot attribute; a person needs to assign or "
+                        "remove it.", "evidence": {"service": r["service"], "user": r["user"], "status": r["status"]}})
     return out
 
 
@@ -149,9 +157,12 @@ class RuleBasedPlanner:
             ups = [add("update_dependent", d, [issue.id], service=d.split(":")[0], cred_id=c,
                        old_fp=r["fp"], old_version=r["version"],
                        summary=f"Point {d} at the new key and check it is healthy.") for d in r["dependents"]]
-            add("revoke_credential", c, [u.id for u in ups] + [issue.id], service="vault", cred_id=c,
-                version=r["version"], old_fp=r["fp"], risk="high",
-                summary=f"Permanently revoke the old key {r['fp']}. Anything still using it will stop working.")
+            rev = add("revoke_credential", c, [u.id for u in ups] + [issue.id], service="vault", cred_id=c,
+                      version=r["version"], old_fp=r["fp"], risk="high",
+                      summary=f"Permanently revoke the old key {r['fp']}. Anything still using it will stop working.")
+            for path in r.get("exposed_in", []):
+                add("scrub_exposed_secret", path, [rev.id], service="github", cred_id=c, old_fp=r["fp"],
+                    summary=f"Remove the leaked (now dead) key from {path} so scanners stop flagging it.")
         return acts
 
 
@@ -205,6 +216,8 @@ def enforce_order(plan):
         if a.type == "revoke_credential":
             need = [x.id for x in plan if x.type in ("issue_replacement", "update_dependent")
                     and (x.target == cred or x.params.get("cred_id") == cred)]
+        if a.type == "scrub_exposed_secret":             # only touch the file once the key is dead
+            need = [x.id for x in plan if x.type == "revoke_credential" and x.target == cred]
         a.depends_on = sorted(set(d for d in a.depends_on if d in by_id) | set(need))
     order, seen, temp = [], set(), set()
 
@@ -387,11 +400,13 @@ class Engine:
                 for a in acts:
                     if self.cancelled or steps >= self.max_steps:
                         break
-                    if a.status not in RUNNABLE:
+                    if a.status not in RUNNABLE and a.status != S.needs_approval:
                         continue
                     deps = [by_id[d] for d in a.depends_on]
                     bad = [d for d in deps if d.status in UNRESOLVED_BAD]
-                    if bad and a.status in (S.authorized, S.retry_pending):
+                    if a.status == S.needs_approval and not bad:
+                        continue                          # waits for a person
+                    if bad and a.status in (S.authorized, S.retry_pending, S.needs_approval):
                         a.move(S.blocked)
                         a.policy = {**a.policy, "decision": "blocked", "rule": "R4-safe-order",
                                     "reason": "Not run because " + ", ".join(f"{d.id} ({d.type}) is {d.status.value}"
@@ -445,6 +460,8 @@ class Engine:
                     a.move(S.failed)
                     a.result = {**a.result, "error": "Change landed but independent verification failed."}
                     self.store.audit(iid, "reconciled_but_verification_failed", {"action": a.id, "evidence": ev})
+                    if a.type == "update_dependent":
+                        self._compensate(a)
                 else:
                     a.move(S.unknown)
                     self.store.audit(iid, "reconcile_inconclusive", {"action": a.id, "evidence": ev})
@@ -528,6 +545,8 @@ class Engine:
             else:
                 a.move(S.unknown)
             self.store.audit(iid, "verification_" + a.status.value, {"action": a.id, "evidence": ev})
+            if a.status == S.failed and a.type == "update_dependent":
+                self._compensate(a)
         return False
 
     def _exec(self, a):
@@ -540,7 +559,35 @@ class Engine:
             return self.sb.update_dependent(a.target, p["cred_id"], a.idem_key)
         if a.type == "revoke_credential":
             return self.sb.vault.revoke(a.target, p["version"], a.idem_key)
+        if a.type == "scrub_exposed_secret":
+            return self.sb.github.scrub_secret(a.target, p["old_fp"], a.idem_key)
         raise Permanent("unsupported action")
+
+    # ---- compensation: undo a dependent update that broke the service ----
+    def _compensate(self, a):
+        iid = a.incident_id
+        inc = self.store.incident(iid)
+        ok, reason = policy.may_compensate(self.sb, a, inc)
+        if not ok:
+            self.store.audit(iid, "rollback_skipped", {"action": a.id, "reason": reason})
+            return
+        with span("rollback", incident=iid, action=a.id, target=a.target) as sp:
+            sp.tool(f"{a.params.get('service')}.restore_dependent", "Put a service back on its previous, still-valid key",
+                    {"target": a.target, "version": a.params["old_version"]})
+            try:
+                res = self.sb.restore_dependent(a.target, a.params["cred_id"], a.params["old_version"],
+                                                f"{a.idem_key}:rollback")
+            except (Transient, Timeout, Permanent) as e:
+                self.store.tool_call(iid, a.id, a.retries + 1, "rollback_failed", {"error": str(e)})
+                self.store.audit(iid, "rollback_failed", {"action": a.id, "error": str(e)})
+                sp.guardrail(f"rollback {a.target}", False, str(e))
+                return
+            healthy = self.sb.health(a.target)
+            sp.guardrail(f"rollback {a.target} restores service", healthy, json.dumps({"healthy": healthy}))
+        self.store.tool_call(iid, a.id, a.retries + 1, "rollback_ok", res)
+        a.result = {**a.result, "rolled_back": True, "healthy_after_rollback": healthy}
+        self.store.audit(iid, "rolled_back", {"action": a.id, "target": a.target, "reason": reason,
+                                              "healthy_after_rollback": healthy})
 
     # ---- Verified Closure: live re-observation against pre-defined conditions ----
     def report(self, iid, live=False):
@@ -558,6 +605,7 @@ class Engine:
             "no_inconclusive_conditions": bool(stored) and all(c.result is not None for c in mandatory),
             "all_mandatory_conditions_pass": bool(stored) and all(c.result is True for c in mandatory),
             "all_actions_verified": bool(acts) and all(a.status == S.verified for a in acts),
+            "audit_chain_intact": self.store.verify_chain()[0],
         }
         closed = all(inv.values())
         bad = [c.id for c in conds if c.mandatory and c.result is not True]
@@ -566,6 +614,10 @@ class Engine:
                        else a.result.get("error", "not run yet")}
                       for a in acts if a.status != S.verified]
         calls = self.store.tool_calls(iid)
+        by_id = {a.id: a for a in acts}
+        dead_at = next((e["ts"] for e in events if e["event"] in ("verification_verified", "reconciled_verified")
+                        and by_id.get(e["data"].get("action")) is not None
+                        and by_id[e["data"]["action"]].type == "revoke_credential"), None)
         if inc.status in (IS.ready.value, IS.investigating.value) and not calls:
             status = inc.status
         elif closed:
@@ -590,14 +642,18 @@ class Engine:
                          "retries": a.retries, "policy": a.policy, "result": a.result,
                          "evidence": a.evidence} for a in acts],
             "approvals": self.store.approvals(iid),
+            "follow_ups": follow_ups(inc, acts),
             "tool_calls": calls,
             "unresolved": unresolved,
             "closure_blocked_reason": None if closed else blocked_reason(inv, bad, unresolved),
             "metrics": {"tool_calls": len(calls),
-                        "failed_tool_calls": sum(c["outcome"] != "ok" for c in calls),
+                        "failed_tool_calls": sum(c["outcome"] not in ("ok", "rollback_ok") for c in calls),
                         "retries": sum(a.retries for a in acts),
                         "checkpoints": len(self.store.checkpoints(iid)),
-                        "audit_events": len(events)},
+                        "audit_events": len(events),
+                        "rollbacks": sum(1 for a in acts if a.result.get("rolled_back")),
+                        "seconds_until_old_key_dead": round(dead_at - inc.created_at, 1) if dead_at else None,
+                        "seconds_until_closed": round(inc.closed_at - inc.created_at, 1) if inc.closed_at else None},
         }
 
     def finalize(self, iid):
@@ -611,7 +667,8 @@ class Engine:
         inc = self.store.incident(iid)
         inc.status = rep["status"]
         if rep["status"] == IS.closed_verified.value:
-            inc.closed_at = time.time()
+            inc.closed_at = inc.closed_at or time.time()
+            rep["metrics"]["seconds_until_closed"] = round(inc.closed_at - inc.created_at, 1)
         self.store.save_incident(inc)
         self.store.audit(iid, "incident_" + rep["status"], {"invariants": rep["invariants"],
                                                             "blocked_reason": rep["closure_blocked_reason"]})
@@ -625,6 +682,51 @@ class Engine:
                 self.store.audit(iid, "ticket_update_failed", {"error": type(e).__name__})
         rep["incident"] = inc.model_dump(mode="json")
         return rep
+
+
+def follow_ups(inc, acts):
+    """Work Rook deliberately leaves to a person, so nothing is silently dropped."""
+    out = []
+    for r in inc.relationships:
+        if r["rel"] == "ownerless_account":
+            out.append(f"Assign an owner to, or remove, the ownerless {r['service']} account '{r['user']}'.")
+    if any(a.type == "scrub_exposed_secret" and a.status == S.verified for a in acts):
+        paths = [a.target for a in acts if a.type == "scrub_exposed_secret"]
+        out.append(f"Git history of {', '.join(paths)} still contains the revoked key. It no longer works; "
+                   "rewrite history only if policy requires it.")
+    for a in acts:
+        if a.result.get("rolled_back"):
+            out.append(f"{a.target} was rolled back to the previous key after its update failed. Fix the service, "
+                       "then run the incident again.")
+    return out
+
+
+def evidence_pack(rep, audit, chain):
+    """Markdown evidence for auditors: what happened, who approved, what was verified, and integrity."""
+    inc = rep["incident"]
+    L = [f"# Incident evidence: {inc['id']}", "",
+         f"- Title: {inc['title']}", f"- Status: **{rep['status']}**", f"- Organisation: {inc['org']}",
+         f"- Opened by: {inc['created_by']}", f"- Tracking ticket: {inc.get('ticket') or 'none'}",
+         f"- Old key dead after: {rep['metrics']['seconds_until_old_key_dead']} s",
+         f"- Closed after: {rep['metrics']['seconds_until_closed']} s", "",
+         "## Summary", rep["summary"], "", "## Findings"]
+    L += [f"- [{f['severity']}] {f['text']}" for f in inc["findings"]]
+    L += ["", "## Actions", "| # | Action | Target | Status | Attempts | Policy |", "|---|---|---|---|---|---|"]
+    L += [f"| {i+1} | {a['type']} | {a['target']} | {a['status']} | {a['retries'] + 1} | {a['policy'].get('rule')} |"
+          for i, a in enumerate(rep["actions"])]
+    L += ["", "## Approvals"] + ([f"- {x['decision']} by {x['by']} ({x['action']})" for x in rep["approvals"]] or ["- none"])
+    L += ["", "## Closure checks (independently observed)", "| Check | Result | Evidence |", "|---|---|---|"]
+    L += [f"| {c['description']} | {'PASS' if c['result'] else 'FAIL' if c['result'] is False else 'INCONCLUSIVE'} | "
+          f"`{json.dumps(c['evidence'])}` |" for c in rep["conditions"]]
+    L += ["", "## Invariants"] + [f"- {k}: {'yes' if v else 'no'}" for k, v in rep["invariants"].items()]
+    L += ["", "## Follow-ups for a person"] + ([f"- {x}" for x in rep["follow_ups"]] or ["- none"])
+    L += ["", "## Audit integrity",
+          f"Hash chain over {chain[2]} audit events: {'intact' if chain[0] else f'BROKEN at event {chain[1]}'}.",
+          f"Last event hash for this incident: `{audit[-1]['hash'] if audit else 'n/a'}`", "",
+          "## Timeline"]
+    L += [f"- {time.strftime('%H:%M:%S', time.gmtime(e['ts']))}Z {e['event']}" for e in audit]
+    L += ["", "_Sandboxed mock integrations, synthetic credentials only._"]
+    return "\n".join(L) + "\n"
 
 
 def blocked_reason(inv, bad, unresolved):
