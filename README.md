@@ -94,7 +94,7 @@ cd web && npm install && npm run dev            # http://localhost:3000
 
 In the dashboard, pick an incident type and a scenario, click **Investigate**, then click **Run plan**. When Rook pauses, switch identity to **Priya (approver)** and approve the revocation. The run continues to closure. Switch to **Eve**, who belongs to a different company, and the incident disappears.
 
-To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. **To go live (neatlogs traces plus a public demo link through Cloudflare), follow [deploy/README.md](deploy/README.md) step by step.**
+To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. **To go live with no terminal (Render runs the agent, Cloudflare Pages serves the dashboard, neatlogs traces every incident), follow [deploy/README.md](deploy/README.md).**
 
 ### One container
 
@@ -148,7 +148,7 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 - **neatlogs**: one session per incident, with typed guardrail, tool and retriever spans, logged steps, a version tag and export masking. Every workflow phase is a span (`incident.run` WORKFLOW, `investigate`/`plan` AGENT, `policy.*`/`verify`/`closure.evaluate` GUARDRAIL, `execute` TOOL, `reconcile`/`checkpoint.restore` CHAIN). Attributes cover incident ID, adapter, action type, attempt, decision and verification result. Secret values are never included. The before/after comparison is the remediation-order change. [Evidence](evidence/neatlogs-traces.md).
 - **Entire**: records the agent coding sessions that build Rook as checkpoints linked to commits, enabled from 2026-10-10 09:30 UTC. [How to inspect them](evidence/entire-workflow.md).
 - **cfo.ai**: the business plan behind Keywarden's pricing and costs. [Evidence](evidence/cfo-ai-business-plan.md).
-- **Cloudflare**: Cloudflare Tunnel gives the locally running demo a public https link (`scripts/share.sh`). Optionally, Cloudflare Pages serves the dashboard and forwards `/api/*` through a Pages Function. Both are covered in [deploy/README.md](deploy/README.md).
+- **Cloudflare**: Cloudflare Pages serves the dashboard and forwards `/api/*` through a Pages Function to the agent on Render (`render.yaml`). Cloudflare Tunnel (`scripts/share.sh`) is the alternative for running from your own machine. Both are covered in [deploy/README.md](deploy/README.md).
 
 ## Limitations
 

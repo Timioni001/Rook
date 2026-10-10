@@ -1,12 +1,42 @@
-# Going live from Ubuntu on WSL: neatlogs → Cloudflare
+# Going live: neatlogs → Cloudflare
 
-You end up with:
+Two ways to put Rook online. Both send a neatlogs trace for every incident anyone runs.
 
-- **Rook** (agent, API and dashboard) running on your own machine
-- **Cloudflare** giving it a public https address through Cloudflare Tunnel, so judges can open the live demo
-- **neatlogs** receiving a trace for every incident anyone runs on it
+- **From the browser (recommended):** Render runs the agent and Cloudflare Pages serves the dashboard address. No terminal and no credit card.
+- **From your machine:** Ubuntu on WSL plus a Cloudflare quick tunnel (`./scripts/share.sh`). The link lives only while the terminal is open.
 
-No cloud server or credit card is needed. Do the steps in order. Each one ends with a check, so you know it worked before moving on.
+---
+
+## Go live from the browser (no terminal)
+
+This path needs only web pages. **Render** runs the Rook agent from this repository, because Rook is a Python service and Cloudflare Pages only hosts static files and small functions. **Cloudflare Pages** gives the dashboard its address and forwards `/api` calls to Render. Both are free and redeploy on every push to `main`.
+
+**A. Render (the agent).**
+1. Sign in at https://render.com with GitHub and allow access to the Rook repository.
+2. Click **New → Blueprint**, then pick the repo. Render reads `render.yaml`.
+3. When it asks for `NEATLOGS_API_KEY`, paste your neatlogs project key. It is stored by Render, never in the repo.
+4. Click **Apply** and wait for the deploy to finish.
+5. Check: open `https://<your-service>.onrender.com/api/health`. It should say `"ok":true`. The full dashboard already works at that address too.
+
+**B. Cloudflare Pages (the address you share).**
+1. In the Cloudflare dashboard, open **Workers & Pages → Create**. Choose the **Pages** tab ("Import an existing Git repository"), then pick the Rook repo.
+2. Use these build settings:
+   - Production branch: `main`
+   - Framework preset: `None`
+   - Root directory: `web`
+   - Build command: `STATIC_EXPORT=1 npx next build`
+   - Build output directory: `out`
+3. Under **Environment variables**, add:
+   - `ROOK_API_ORIGIN`: the Render address from A5, with no trailing slash
+   - `NODE_VERSION`: `22`
+4. Click **Save and Deploy**.
+5. Check: open `https://<project>.pages.dev` and run an incident. A trace should appear in neatlogs.
+
+Good to know:
+- The free Render service sleeps after 15 idle minutes. The first visit after that takes about a minute to wake it, so open the link yourself just before judges or a recording.
+- Demo data resets whenever the service restarts. Everything in Rook is synthetic, so nothing is lost.
+
+The terminal steps below still work if you'd rather run Rook on your own machine.
 
 ---
 
@@ -69,17 +99,6 @@ The script builds the dashboard, starts Rook on port 8000, and opens a Cloudflar
 **Check:** open the link on your phone, pick an incident type, click **Investigate**, then click **Run plan**. A new session appears in neatlogs.
 
 The link works while the terminal stays open and changes every time you run the script. Run it when you record the video or while judging happens. Ctrl+C stops it.
-
-### Optional: a fixed dashboard address on Cloudflare Pages
-
-1. Build and upload the dashboard:
-   ```bash
-   cd web && STATIC_EXPORT=1 npx next build
-   npx wrangler login && npx wrangler pages deploy out --project-name rook
-   ```
-2. In the Cloudflare dashboard, go to **Workers & Pages → rook → Settings → Variables and Secrets**. Set `ROOK_API_ORIGIN` to your tunnel address with no trailing slash, then deploy again.
-
-Quick tunnel addresses change on every run, so you'd update that variable each time. The share link from step 2 is enough for the hackathon.
 
 ---
 
