@@ -1,0 +1,13 @@
+# Render Blueprint: runs the Rook agent and dashboard from this repository's Dockerfile.
+# Render dashboard -> New -> Blueprint -> pick this repo. No terminal needed.
+services:
+  - type: web
+    name: rook
+    runtime: docker
+    plan: free
+    branch: main
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NEATLOGS_API_KEY
+        sync: false        # Render asks for the value once, in the browser; it never lives in the repo
