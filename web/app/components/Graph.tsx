@@ -3,16 +3,20 @@
 type Node = { id: string; kind: string; label: string; status: string; detail?: string }
 type Edge = { from: string; to: string; rel: string }
 
-const COLS: Record<string, number> = { identity: 0, account: 1, credential: 1, dependent: 2, repo: 2 }
+const COLS: Record<string, number> = {
+  identity: 0, account: 1, credential: 1, dependent: 2, repo: 2,
+  alert: 0, caller: 0, service: 1, pipeline: 1, revision: 2, host: 2,
+}
 const KIND_LABEL: Record<string, string> = {
   identity: 'Person', account: 'Account', credential: 'API key', dependent: 'Service', repo: 'Code',
+  alert: 'Alert', caller: 'Caller', service: 'Service', pipeline: 'Pipeline', revision: 'Deploy', host: 'Database',
 }
 
 function tone(n: Node, live: Record<string, string>) {
   const s = live[n.id] || n.status
-  if (/disabled|revoked|moved|healthy|dead|issued/.test(s)) return 'ok'
-  if (/active|uses old key|exposed/.test(s)) return n.kind === 'identity' ? 'mute' : 'warn'
-  if (/broken|failed/.test(s)) return 'bad'
+  if (/broken|failed|failing|decommissioned|firing|suspect/.test(s)) return 'bad'
+  if (/disabled|revoked|moved|healthy|dead|issued|known good|resumed|cleared/.test(s)) return 'ok'
+  if (/active|uses old key|exposed|auto-deploy|paused|no longer used/.test(s)) return n.kind === 'identity' ? 'mute' : 'warn'
   return 'mute'
 }
 

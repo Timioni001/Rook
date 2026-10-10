@@ -1,0 +1,28 @@
+{
+  "label": "after",
+  "scenario": "outage_rollback_down",
+  "playbook": "outage",
+  "incident": "inc-6acc278d",
+  "status": "escalated",
+  "service_restored_after_s": null,
+  "duration_ms": 96.6,
+  "summary": "Escalated to a human: Rook could not finish safely and will not claim success. inc-6acc278d-a2 rollback_service on checkout-api is failed; inc-6acc278d-a3 resume_pipeline on checkout-api is blocked. Failing checks: checkout-api-healthy, checkout-api-error-rate, checkout-api-known-good, app:storefront-healthy, checkout-api-synthetic-order, checkout-api-pipeline-resumed, checkout-api-rev42-blocked.",
+  "tool_calls": 5,
+  "failed_tool_calls": 4,
+  "checkpoints": 11,
+  "audit_events": 23,
+  "conditions_passed": "0/7",
+  "workflow_steps": 10,
+  "dependent_outage_steps": 10,
+  "follow_ups": [
+    "The checkout-api pipeline is still paused on purpose. Resume it once the service is fixed, or it will stay frozen."
+  ],
+  "unhealthy_dependents": {
+    "cloud:checkout-api": 10,
+    "app:storefront": 10
+  },
+  "retries": {
+    "inc-6acc278d-a2": 4
+  },
+  "neatlogs_export": false
+}

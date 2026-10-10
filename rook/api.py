@@ -19,7 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import obs
 from .domain import Principal
 from .engine import Engine, RunInProgress, evidence_pack
-from .sandbox import SCENARIOS, Sandbox
+from .playbooks import PLAYBOOKS
+from .sandbox import SCENARIOS, Sandbox, playbook_of
 from .store import Store
 
 MAX_BODY = 8 * 1024
@@ -28,8 +29,8 @@ ACTION_ID = re.compile(r"^inc-[0-9a-f]{8}-a\d{1,3}$")
 
 # Local demo identities. Replace with ROOK_TOKENS (JSON {token: principal}) anywhere shared.
 DEMO_TOKENS = {
-    "demo-analyst-token": {"id": "u-sam", "name": "Sam (security analyst)", "org": "acme", "roles": ["analyst"]},
-    "demo-approver-token": {"id": "u-priya", "name": "Priya (security lead)", "org": "acme",
+    "demo-analyst-token": {"id": "u-sam", "name": "Sam (IT operations)", "org": "acme", "roles": ["analyst"]},
+    "demo-approver-token": {"id": "u-priya", "name": "Priya (IT lead)", "org": "acme",
                             "roles": ["analyst", "approver"]},
     "demo-viewer-token": {"id": "u-lee", "name": "Lee (read only)", "org": "acme", "roles": ["viewer"]},
     "demo-other-org-token": {"id": "u-eve", "name": "Eve (other company)", "org": "globex",
@@ -174,12 +175,17 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
 
     @app.get("/api/scenarios")
     def scenarios(p: Principal = Depends(limited)):
-        return [{"name": k, "description": v[0]} for k, v in SCENARIOS.items()]
+        return [{"name": k, "description": v[0], "playbook": playbook_of(k)} for k, v in SCENARIOS.items()]
+
+    @app.get("/api/playbooks")
+    def playbooks(p: Principal = Depends(limited)):
+        return [{"key": pb.key, "name": pb.name, "trigger": pb.trigger} for pb in PLAYBOOKS.values()]
 
     @app.get("/api/incidents")
     def list_incidents(p: Principal = Depends(limited)):
         return [{"id": i.id, "title": i.title, "status": i.status, "severity": i.severity,
-                 "scenario": i.scenario, "created_at": i.created_at, "created_by": i.created_by}
+                 "scenario": i.scenario, "playbook": i.playbook, "created_at": i.created_at,
+                 "created_by": i.created_by}
                 for i in store.incidents(org=p.org)]
 
     @app.post("/api/incidents", status_code=201)

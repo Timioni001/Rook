@@ -1,8 +1,9 @@
 """Deterministic, model-independent authorization. Fails closed.
 
 Rook runs as a least-privilege service principal: it may only perform the action types in
-ALLOWED, only against the incident subject's own resources, and irreversible actions need a
-human approver from the incident's organisation. Policy is evaluated when the plan is made
+ALLOWED, only against resources that belong to the incident's subject (the offboarded person, or
+the failing service), and irreversible or uncertain actions need a human approver from the
+incident's organisation. Policy is evaluated when the plan is made
 and again immediately before each action executes, against live state.
 """
 
@@ -14,7 +15,11 @@ ALLOWED = {
     "update_dependent": {"app", "cloud"},
     "revoke_credential": {"vault"},
     "scrub_exposed_secret": {"github"},
+    "pause_pipeline": {"cloud"},
+    "rollback_service": {"cloud"},
+    "resume_pipeline": {"cloud"},
 }
+KNOWN_GOOD_MINUTES = 60      # a revision must have run healthy this long to be rolled back to unattended
 NEEDS_APPROVAL = {"revoke_credential"}     # irreversible and production-affecting
 
 
@@ -27,6 +32,9 @@ def owner_of(sb, a):
             return sb.vault.owner(a.target)
         if a.type in ("update_dependent", "scrub_exposed_secret"):
             return sb.vault.owner(p["cred_id"])
+        if a.type in ("pause_pipeline", "rollback_service", "resume_pipeline"):
+            sb.cloud.deployment(a.target)
+            return f"cloud:{a.target}"
     except KeyError:
         return None
 
@@ -57,6 +65,33 @@ def decide(a, inc, sb, plan, approval=None):
                        and x.status.value not in ("blocked", "failed", "verified")]
             if not pending:
                 return "blocked", "Refusing to revoke the only working version of this key.", "R4-safe-order"
+
+    if a.type == "rollback_service":
+        p = sb.cloud.pipeline(a.target)
+        paused_in_plan = any(x.type == "pause_pipeline" and x.target == a.target and x.status.value != "blocked"
+                             for x in plan)
+        if p["auto_deploy"] and p["desired"] != a.params["to_revision"] and not paused_in_plan:
+            return ("blocked", f"Auto-deploy would put revision {p['desired']} straight back over the rollback; "
+                    "the pipeline has to be paused first.", "R4-safe-order")
+        try:
+            target = sb.cloud.revision(a.target, a.params["to_revision"])
+        except KeyError:
+            return "blocked", "That revision does not exist.", "R3-dependency"
+        if target["healthy_minutes"] < KNOWN_GOOD_MINUTES:
+            if approval is None:
+                return ("needs_approval", f"Revision {a.params['to_revision']} has no healthy track record, so a person "
+                        "must confirm rolling back to it.", "R8-known-good")
+            if "approver" not in approval.get("roles", []) or approval.get("org") != inc.org:
+                return "blocked", "The approval did not come from an approver in this organisation.", "R8-known-good"
+            return "authorized", f"Approved by {approval['by']}.", "R8-known-good"
+        return ("authorized", f"Revision {a.params['to_revision']} ran healthy for {target['healthy_minutes'] // 60} h "
+                "before the bad deploy; rolling back to it is reversible.", "R8-known-good")
+    if a.type == "resume_pipeline":
+        cur = sb.cloud.deployment(a.target)["current"]
+        rb = [x for x in plan if x.type == "rollback_service" and x.target == a.target]
+        if cur == a.params["block_revision"] and not any(x.status.value not in ("blocked", "failed") for x in rb):
+            return ("blocked", f"The service still runs revision {cur}; resuming now would keep the bad change live.",
+                    "R4-safe-order")
 
     if a.type in NEEDS_APPROVAL:
         if approval is None:

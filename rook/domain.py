@@ -58,6 +58,7 @@ class Incident(BaseModel):
     title: str = ""
     severity: str = "high"
     scenario: str = "signature"
+    playbook: str = "offboarding"      # which kind of incident: see rook/playbooks.py
     status: str = IncidentStatus.investigating.value
     created_at: float = Field(default_factory=time.time)
     closed_at: Optional[float] = None
@@ -71,12 +72,12 @@ class Incident(BaseModel):
 class Action(BaseModel):
     id: str
     incident_id: str
-    type: str                 # disable_account | issue_replacement | update_dependent | revoke_credential
+    type: str                 # one of policy.ALLOWED, e.g. revoke_credential or rollback_service
     target: str
     params: dict = {}
     depends_on: list[str] = []
     summary: str = ""         # what this does, in plain language
-    risk: str = "low"         # low | high (irreversible or production-affecting)
+    risk: str = "low"         # low | medium (production change, reversible) | high (irreversible)
     status: Status = Status.planned
     retries: int = 0
     max_retries: int = 3

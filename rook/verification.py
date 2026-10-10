@@ -51,7 +51,50 @@ def _secret_removed(sb, a):
     return (not left), {"path": a["path"], "key_still_in_file": bool(left)}
 
 
+def _service_healthy(sb, a):
+    h = sb.cloud.service_healthy(a["service"])
+    return h, {"service": a["service"], "health_check_passed": h}
+
+
+def _error_rate_ok(sb, a):
+    r = sb.cloud.error_rate(a["service"])
+    return r < a["max"], {"error_rate": r, "threshold": a["max"]}
+
+
+def _running_known_good(sb, a):
+    cur = sb.cloud.deployment(a["service"])["current"]
+    return cur != a["bad_revision"] and cur in a["good_revisions"], {"running_revision": cur}
+
+
+def _caller_healthy(sb, a):
+    h = sb.caller_healthy(a["caller"], a["service"])
+    return h, {"caller": a["caller"], "healthy": h}
+
+
+def _synthetic_checkout(sb, a):
+    ok = sb.synthetic_checkout(a["service"])
+    return ok, {"test_order_placed": ok}
+
+
+def _pipeline_resumed(sb, a):
+    p = sb.cloud.pipeline(a["service"])
+    return p["auto_deploy"], {"auto_deploy": p["auto_deploy"]}
+
+
+def _revision_blocked(sb, a):
+    p = sb.cloud.pipeline(a["service"])
+    ok = a["revision"] in p["blocked"] and p["desired"] != a["revision"]
+    return ok, {"blocked_revisions": p["blocked"], "pipeline_desired": p["desired"]}
+
+
 OBSERVERS = {
+    "service_healthy": _service_healthy,
+    "error_rate_below": _error_rate_ok,
+    "running_known_good": _running_known_good,
+    "caller_healthy": _caller_healthy,
+    "synthetic_checkout_passes": _synthetic_checkout,
+    "pipeline_resumed": _pipeline_resumed,
+    "bad_revision_blocked": _revision_blocked,
     "secret_removed_from_repo": _secret_removed,
     "account_disabled": _account_disabled,
     "old_credential_rejected": _old_rejected,
@@ -63,11 +106,49 @@ OBSERVERS = {
 }
 
 
+OBSERVERS["pipeline_paused"] = lambda sb, a: (
+    not sb.cloud.pipeline(a["service"])["auto_deploy"], {"auto_deploy": sb.cloud.pipeline(a["service"])["auto_deploy"]})
+
+
 def observe(sb, method, args):
     try:
         return OBSERVERS[method](sb, args)
     except Exception as e:                       # missing/unobservable state => inconclusive
         return None, {"error": type(e).__name__}
+
+
+def outage_conditions(rel):
+    """Closure for a service outage: healthy on a known-good revision, callers fine, nothing left frozen."""
+    st = next(r for r in rel if r["rel"] == "service_state")
+    svc = st["service"]
+    dep = next((r for r in rel if r["rel"] == "deploy"), None)
+    good = [r["revision"] for r in rel if r["rel"] == "known_good"]
+    conds = [
+        Condition(id=f"{svc}-healthy", description=f"{svc} passes its health check", expected="health probe passes",
+                  method="service_healthy", args={"service": svc}),
+        Condition(id=f"{svc}-error-rate", description=f"{svc} error rate is back under 1%",
+                  expected="error rate < 0.01", method="error_rate_below", args={"service": svc, "max": 0.01}),
+    ]
+    if dep:
+        conds.append(Condition(id=f"{svc}-known-good", description=f"{svc} runs a known-good revision, not {dep['revision']}",
+                               expected=f"running revision in {good}", method="running_known_good",
+                               args={"service": svc, "bad_revision": dep["revision"], "good_revisions": good}))
+    for r in rel:
+        if r["rel"] == "downstream":
+            conds.append(Condition(id=f"{r['caller']}-healthy", description=f"{r['caller']}, which calls {svc}, is healthy",
+                                   expected="caller health probe passes", method="caller_healthy",
+                                   args={"caller": r["caller"], "service": svc}))
+    conds.append(Condition(id=f"{svc}-synthetic-order", description="A synthetic test order goes through end to end",
+                           expected="test order placed", method="synthetic_checkout_passes", args={"service": svc}))
+    if any(r["rel"] == "pipeline" for r in rel):
+        conds.append(Condition(id=f"{svc}-pipeline-resumed", description="The deploy pipeline is running again, not left frozen",
+                               expected="auto-deploy on", method="pipeline_resumed", args={"service": svc}))
+        if dep:
+            conds.append(Condition(id=f"{svc}-rev{dep['revision']}-blocked",
+                                   description=f"Revision {dep['revision']} is blocked from redeploying",
+                                   expected="revision in pipeline blocklist and not desired",
+                                   method="bad_revision_blocked", args={"service": svc, "revision": dep["revision"]}))
+    return conds
 
 
 def build_conditions(rel):
@@ -145,6 +226,17 @@ def checks_for(a):
         return [("old_credential_rejected", {"fp": p["old_fp"]})]
     if a.type == "scrub_exposed_secret":
         return [("secret_removed_from_repo", {"path": a.target, "fp": p["old_fp"]})]
+    if a.type == "pause_pipeline":
+        return [("pipeline_paused", {"service": a.target})]
+    if a.type == "rollback_service":
+        return [("running_known_good", {"service": a.target, "bad_revision": p["from_revision"],
+                                        "good_revisions": [p["to_revision"]]}),
+                ("service_healthy", {"service": a.target})]
+    if a.type == "resume_pipeline":
+        return [("pipeline_resumed", {"service": a.target}),
+                ("bad_revision_blocked", {"service": a.target, "revision": p["block_revision"]}),
+                ("running_known_good", {"service": a.target, "bad_revision": p["block_revision"],
+                                        "good_revisions": [p["expect_revision"]]})]
     return None
 
 
@@ -173,6 +265,12 @@ def applied(sb, a):
             return sb.vault.version_info(p["cred_id"], p["version"])["status"] == "revoked"
         if a.type == "scrub_exposed_secret":
             return a.target not in sb.github.find_secret(p["old_fp"])
+        if a.type == "pause_pipeline":
+            return not sb.cloud.pipeline(a.target)["auto_deploy"]
+        if a.type == "rollback_service":
+            return sb.cloud.deployment(a.target)["current"] == p["to_revision"]
+        if a.type == "resume_pipeline":
+            return sb.cloud.pipeline(a.target)["auto_deploy"]
     except Exception:
         return None
     return None

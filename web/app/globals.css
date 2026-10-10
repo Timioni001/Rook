@@ -152,3 +152,6 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .node-ok { fill: var(--lime) } .node-warn { fill: var(--warn-bg) } .node-bad { fill: var(--bad-bg) } .node-mute { fill: var(--soft) }
 .node-kind { fill: var(--mute); font: 10.5px var(--mono) } .node-label { fill: var(--ink); font-size: 13px; font-weight: 600 }
 .edge-label { fill: var(--mute); font: 10px var(--mono) }
+.playbooks { margin-bottom: 14px }
+.playbooks .chip { flex-direction: column; align-items: flex-start; gap: 2px; max-width: 280px }
+.playbooks .chip .small { opacity: .8 }
