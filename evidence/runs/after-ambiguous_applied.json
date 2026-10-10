@@ -1,0 +1,20 @@
+{
+  "label": "after",
+  "scenario": "ambiguous_applied",
+  "incident": "inc-3739b0d3",
+  "status": "closed_verified",
+  "duration_ms": 226.3,
+  "summary": "Closed with evidence: all 6 actions were independently verified and every closure check passed. The old key is rejected, the replacement works, and every dependent is healthy.",
+  "tool_calls": 6,
+  "failed_tool_calls": 1,
+  "checkpoints": 13,
+  "audit_events": 29,
+  "conditions_passed": "12/12",
+  "workflow_steps": 12,
+  "dependent_outage_steps": 0,
+  "unhealthy_dependents": {},
+  "retries": {
+    "inc-3739b0d3-a5": 1
+  },
+  "neatlogs_export": false
+}

@@ -1,0 +1,20 @@
+{
+  "label": "after",
+  "scenario": "signature",
+  "incident": "inc-826e31db",
+  "status": "closed_verified",
+  "duration_ms": 257.5,
+  "summary": "Closed with evidence: all 6 actions were independently verified and every closure check passed. The old key is rejected, the replacement works, and every dependent is healthy.",
+  "tool_calls": 7,
+  "failed_tool_calls": 1,
+  "checkpoints": 15,
+  "audit_events": 32,
+  "conditions_passed": "12/12",
+  "workflow_steps": 14,
+  "dependent_outage_steps": 0,
+  "unhealthy_dependents": {},
+  "retries": {
+    "inc-826e31db-a4": 1
+  },
+  "neatlogs_export": false
+}

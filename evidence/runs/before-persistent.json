@@ -1,0 +1,18 @@
+{
+  "label": "before",
+  "scenario": "persistent",
+  "incident": "inc-80ce89",
+  "status": "open",
+  "duration_ms": 109.9,
+  "tool_calls": 7,
+  "audit_events": 24,
+  "workflow_steps": 10,
+  "dependent_outage_steps": 6,
+  "unhealthy_dependents": {
+    "billing-app": 6
+  },
+  "retries": {
+    "inc-80ce89-a4": 4
+  },
+  "neatlogs_export": false
+}
