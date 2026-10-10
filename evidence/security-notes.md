@@ -11,11 +11,13 @@ Keywarden is a sandbox: all five adapters are in-process mocks holding synthetic
 - **Ambiguous outcomes.** Any timeout or transient error moves the action to `unknown`. Rook then probes real state before it decides between verified, safe retry and escalation. If it can't tell, it stops.
 - **Bounded retries and steps.** `max_retries=3` and `max_steps=200`. Exhaustion leads to `failed` and escalation.
 - **Verification is separate from execution.** Observers in `verification.py` never read adapter responses.
-- **Append-only audit.** SQLite triggers reject `UPDATE`/`DELETE` on `audit`.
+- **Append-only, hash-chained audit.** SQLite triggers reject `UPDATE`/`DELETE` on `audit`. Each event also stores `sha256(previous hash + event)`, so even someone who bypasses the triggers breaks the chain. A broken chain fails the `audit_chain_intact` invariant and blocks closure (`test_tampered_audit_log_blocks_closure`).
+- **Compensation, not hope.** If a service breaks on the new key, Rook restores its previous key, but only while that key is still valid (policy R7). Revocation is then held back.
+- **No action on unattributable access.** Ownerless accounts are reported as follow-ups and never touched.
 
 ## API
 
-- Bearer token on every route except `/api/health`. Tokens are looked up by SHA-256 digest with constant-time comparison, and the principal (id, org, roles) comes only from the token.
+- Bearer token on every route except `/api/health`, including the `/evidence` download. Tokens are looked up by SHA-256 digest with constant-time comparison, and the principal (id, org, roles) comes only from the token.
 - Request bodies are strict (`extra="forbid"`). `owner`, `org`, `created_by`, `approver` and similar fields are rejected with 422.
 - Object-level authorization: an incident from another org returns 404 on every route, so its existence isn't leaked either.
 - Roles: `viewer` (read), `analyst` (create, run, cancel), `approver` (approve, reject).

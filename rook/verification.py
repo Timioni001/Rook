@@ -46,7 +46,13 @@ def _no_live_dependents_on_old(sb, a):
     return (not deps), {"still_configured_with_old_key": deps}
 
 
+def _secret_removed(sb, a):
+    left = [p for p in sb.github.find_secret(a["fp"]) if p == a["path"]]
+    return (not left), {"path": a["path"], "key_still_in_file": bool(left)}
+
+
 OBSERVERS = {
+    "secret_removed_from_repo": _secret_removed,
     "account_disabled": _account_disabled,
     "old_credential_rejected": _old_rejected,
     "replacement_works": _replacement_works,
@@ -87,6 +93,11 @@ def build_conditions(rel):
                 id=f"{c}-no-dependents-on-old", description="Nothing is still configured with the old key",
                 expected="config scan finds no use of the old key", method="no_dependents_on_old_key",
                 args={"fp": r["fp"]}))
+            for path in r.get("exposed_in", []):
+                conds.append(Condition(
+                    id=f"repo:{path}-scrubbed", description=f"The leaked key is removed from {path}",
+                    expected="file no longer contains the old key", method="secret_removed_from_repo",
+                    args={"path": path, "fp": r["fp"]}))
             for dep in r["dependents"]:
                 conds.append(Condition(
                     id=f"{dep}-uses-replacement", description=f"{dep} is configured with the replacement key",
@@ -132,6 +143,8 @@ def checks_for(a):
                 ("dependent_healthy", {"dependent": a.target})]
     if a.type == "revoke_credential":
         return [("old_credential_rejected", {"fp": p["old_fp"]})]
+    if a.type == "scrub_exposed_secret":
+        return [("secret_removed_from_repo", {"path": a.target, "fp": p["old_fp"]})]
     return None
 
 
@@ -158,6 +171,8 @@ def applied(sb, a):
             return sb.dependent_config_fp(a.target) != p["old_fp"]
         if a.type == "revoke_credential":
             return sb.vault.version_info(p["cred_id"], p["version"])["status"] == "revoked"
+        if a.type == "scrub_exposed_secret":
+            return a.target not in sb.github.find_secret(p["old_fp"])
     except Exception:
         return None
     return None

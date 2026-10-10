@@ -98,7 +98,7 @@ def test_restart_from_checkpoint(tmp_path):
     e2.approve(inc.id, revoke_of(st2, inc.id).id, APPROVER)
     rep = e2.run(inc.id)
     assert rep["status"] == "closed_verified"
-    assert sb2.s["mutations"] == 9            # ticket open + 6 actions + 2 ticket updates: nothing applied twice
+    assert sb2.s["mutations"] == 10           # ticket open + 7 actions + 2 ticket updates: nothing applied twice
 
 
 # 4. duplicate execution and idempotency
@@ -206,7 +206,9 @@ def test_dependents_updated_before_revocation():
     e.approve(inc.id, rev.id, APPROVER)
     e.run(inc.id)
     order = [x["data"]["action"] for x in st.audit_events(inc.id) if x["event"] == "verification_verified"]
-    assert order.index(rev.id) == len(order) - 1
+    ups = [a.id for a in plan if a.type == "update_dependent"]
+    scrub = next(a.id for a in plan if a.type == "scrub_exposed_secret")
+    assert max(order.index(u) for u in ups) < order.index(rev.id) < order.index(scrub)
 
 
 def test_revocation_without_dependent_steps_is_blocked():
@@ -324,3 +326,64 @@ def test_cancellation_stops_before_mutation():
     rep = e.run(inc.id)
     assert sb.s["mutations"] == 1 and rep["status"] != "closed_verified"
     assert "cancelled" in events(st, inc.id)
+
+
+# --- answers to traditional incident-response problems ---
+
+def test_broken_update_is_rolled_back_so_the_service_stays_up():
+    st, sb, e = mk(scenario="faulty_update")             # billing-app stores the wrong key
+    iid, rep = go(e)
+    a = acts(st, iid)[("update_dependent", "app:billing-app")]
+    assert a.status == Status.failed and a.result["rolled_back"] and a.result["healthy_after_rollback"]
+    assert sb.health("app:billing-app")                    # back on the old, still-valid key
+    assert revoke_of(st, iid).status in (Status.blocked, Status.needs_approval)
+    assert rep["status"] == "escalated" and rep["metrics"]["rollbacks"] == 1
+    assert any("rolled back" in f for f in rep["follow_ups"])
+    assert "rolled_back" in events(st, iid)
+
+
+def test_no_rollback_once_old_key_is_dead():
+    st, sb, e = mk()
+    inc = e.start()
+    a = acts(st, inc.id)[("update_dependent", "app:billing-app")]
+    sb.s["vault"]["credentials"]["cred-pay"]["versions"][0]["status"] = "revoked"
+    e._compensate(a)
+    assert "rollback_skipped" in events(st, inc.id)
+
+
+def test_leaked_secret_is_scrubbed_from_the_repo_after_revocation():
+    st, sb, e = mk()
+    iid, rep = go(e)
+    scrub = acts(st, iid)[("scrub_exposed_secret", "billing-api/.env.test")]
+    assert scrub.status == Status.verified
+    assert "sk_test_SYNTH_payments" not in sb.s["github"]["repos"]["billing-api"][".env.test"]
+    assert any(c["id"] == "repo:billing-api/.env.test-scrubbed" and c["result"] is True for c in rep["conditions"])
+    assert any("Git history" in f for f in rep["follow_ups"])
+
+
+def test_ownerless_account_is_flagged_never_touched():
+    st, sb, e = mk()
+    iid, rep = go(e)
+    assert sb.s["pm"]["accounts"]["ghost"]["status"] == "active"
+    assert any("ghost" in f["text"] for f in rep["incident"]["findings"])
+    assert any("ghost" in f for f in rep["follow_ups"])
+    assert not any(a.target == "ghost" for a in st.actions(iid))
+
+
+def test_tampered_audit_log_blocks_closure():
+    st, sb, e = mk()
+    iid, rep = go(e)
+    assert rep["status"] == "closed_verified" and st.verify_chain()[0]
+    st._x("DROP TRIGGER audit_no_update")                  # an attacker with DB access
+    st._x("UPDATE audit SET event='approval_granted' WHERE n=3")
+    ok, bad, _ = st.verify_chain()
+    assert not ok and bad == 3
+    rep2 = e.report(iid, live=True)
+    assert not rep2["invariants"]["audit_chain_intact"] and rep2["status"] != "closed_verified"
+
+
+def test_time_to_contain_metrics():
+    st, sb, e = mk()
+    iid, rep = go(e)
+    m = rep["metrics"]
+    assert m["seconds_until_old_key_dead"] is not None and m["seconds_until_closed"] >= m["seconds_until_old_key_dead"]

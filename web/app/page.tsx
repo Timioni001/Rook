@@ -26,6 +26,8 @@ function liveState(actions: any[], graph: any): Record<string, string> {
     if (a.type === 'issue_replacement' && ok) m[a.target] = 'replacement issued'
     if (a.type === 'revoke_credential') m[a.target] = ok ? 'revoked' : bad ? 'revoke failed' : m[a.target]
     if (a.type === 'revoke_credential' && ok) (graph?.nodes || []).filter((n: any) => n.kind === 'repo').forEach((n: any) => { m[n.id] = 'leaked key is dead' })
+    if (a.type === 'scrub_exposed_secret' && ok) m[`repo:${a.target}`] = 'key removed from file'
+    if (a.type === 'update_dependent' && a.result?.rolled_back) m[a.target] = 'rolled back · healthy'
   }
   return Object.fromEntries(Object.entries(m).filter(([, v]) => v))
 }
@@ -207,7 +209,7 @@ export default function Page() {
                 <Stat dark={false} label="Actions verified" value={`${R.actions.filter((a: any) => a.status === 'verified').length}/${R.actions.length}`} />
                 <Stat dark label="Closure checks passing" value={`${R.conditions.filter((c: any) => c.result === true).length}/${R.conditions.length}`} />
                 <Stat dark label="Failed tool calls" value={R.metrics.failed_tool_calls} />
-                <Stat dark={false} label="Checkpoints saved" value={R.metrics.checkpoints} />
+                <Stat dark={false} label="Old key dead after" value={R.metrics.seconds_until_old_key_dead != null ? `${R.metrics.seconds_until_old_key_dead}s` : '—'} />
               </div>
             </section>
 
@@ -334,11 +336,24 @@ export default function Page() {
                   <p className="lead">{R.summary}</p>
                   {R.closure_blocked_reason && <p className="small"><b>Why it is not closed:</b> {R.closure_blocked_reason}</p>}
                   {R.approvals.length > 0 && <p className="small">Approvals: {R.approvals.map((a: any) => `${a.decision} by ${a.by} at ${time(a.ts)}`).join('; ')}</p>}
-                  <button className="btn-dark" onClick={() => {
-                    const blob = new Blob([JSON.stringify({ report: R, audit: d.audit }, null, 2)], { type: 'application/json' })
-                    const u = URL.createObjectURL(blob); const el = document.createElement('a')
-                    el.href = u; el.download = `${R.incident.id}-report.json`; el.click(); URL.revokeObjectURL(u)
-                  }}>Download report + audit trail</button>
+                  {R.follow_ups.length > 0 && (<>
+                    <h3 className="h4" style={{ marginTop: 16 }}><mark>Left for a person</mark></h3>
+                    <ul className="facts">{R.follow_ups.map((f: string, i: number) => <li key={i}>→ {f}</li>)}</ul>
+                  </>)}
+                  <div className="row">
+                    <button className="btn-dark" disabled={busy} onClick={() => act(async () => {
+                      const r = await fetch(`/api/incidents/${id}/evidence`, { headers: { Authorization: `Bearer ${who.token}` } })
+                      if (!r.ok) throw new Error('Could not build the evidence pack.')
+                      const u = URL.createObjectURL(await r.blob()); const el = document.createElement('a')
+                      el.href = u; el.download = `${R.incident.id}-evidence.md`; el.click(); URL.revokeObjectURL(u)
+                    })}>Download evidence pack (.md)</button>
+                    <button className="btn-outline" onClick={() => {
+                      const blob = new Blob([JSON.stringify({ report: R, audit: d.audit }, null, 2)], { type: 'application/json' })
+                      const u = URL.createObjectURL(blob); const el = document.createElement('a')
+                      el.href = u; el.download = `${R.incident.id}-report.json`; el.click(); URL.revokeObjectURL(u)
+                    }}>Raw JSON</button>
+                  </div>
+                  <p className="small muted">Audit log is hash-chained: {R.invariants.audit_chain_intact ? 'chain verified intact' : 'CHAIN BROKEN'} · {R.metrics.checkpoints} checkpoints.</p>
                 </div>
                 <ul className="facts invariants">
                   {Object.entries(R.invariants).map(([k, v]) => (
@@ -422,16 +437,24 @@ function HeroArt() {
 }
 
 function Recovery({ R, audit, checkpoints }: { R: any; audit: any[]; checkpoints: any[] }) {
-  const failures = R.tool_calls.filter((c: any) => c.outcome !== 'ok')
+  const failures = R.tool_calls.filter((c: any) => !['ok', 'rollback_ok', 'rollback_failed'].includes(c.outcome))
+  const rollbacks = audit.filter((e) => e.event === 'rolled_back')
   const restored = audit.filter((e) => e.event === 'checkpoint_restored')
   return (
     <section className="section">
       <SectionTitle label="Failure and recovery" text="What went wrong, what Rook checked, and what it did about it." />
-      {!failures.length && !restored.length ? (
+      {!failures.length && !restored.length && !rollbacks.length ? (
         <div className="soft"><p className="muted">No failed tool calls so far. {checkpoints.length} checkpoints saved.</p></div>
       ) : (
         <div className="dark-panel">
           {restored.map((e) => <div key={e.n} className="col"><span className="mono small lime">restart</span><p>{eventText(e)}</p></div>)}
+          {rollbacks.map((e) => (
+            <div key={e.n} className="recovery-row">
+              <div className="col"><span className="mono small lime">01 · broken update</span><p>{e.data.target} accepted the new key but failed its independent check.</p></div>
+              <div className="col"><span className="mono small lime">02 · rollback</span><p>{eventText(e)}.</p><p className="small dim">{e.data.reason}</p></div>
+              <div className="col"><span className="mono small lime">03 · result</span><p className={e.data.healthy_after_rollback ? 'lime' : 'err-text-dark'}>{e.data.healthy_after_rollback ? 'Service healthy again. Revocation held back; escalated to a person.' : 'Still unhealthy after rollback. Escalated.'}</p></div>
+            </div>
+          ))}
           {failures.map((f: any) => {
             const a = R.actions.find((x: any) => x.id === f.action)
             const after = audit.filter((e) => e.data?.action === f.action && e.ts >= f.ts)

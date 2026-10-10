@@ -13,12 +13,12 @@ import hashlib, hmac, json, os, pathlib, re, threading, time
 from contextlib import asynccontextmanager
 from typing import Literal, Optional
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from . import obs
 from .domain import Principal
-from .engine import Engine, RunInProgress
+from .engine import Engine, RunInProgress, evidence_pack
 from .sandbox import SCENARIOS, Sandbox
 from .store import Store
 
@@ -200,6 +200,13 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
         return {"report": rep, "audit": store.audit_events(iid), "checkpoints": store.checkpoints(iid),
                 "running": store.run_active(iid),
                 "can": {"run": p.can("analyst"), "approve": p.can("approver")}}
+
+    @app.get("/api/incidents/{iid}/evidence")
+    def evidence(iid: str, p: Principal = Depends(limited)):
+        owned_incident(iid, p)
+        md = evidence_pack(Engine(store, sb).report(iid), store.audit_events(iid), store.verify_chain())
+        return PlainTextResponse(md, media_type="text/markdown",
+                                 headers={"Content-Disposition": f'attachment; filename="{iid}-evidence.md"'})
 
     @app.get("/api/incidents/{iid}/events")
     def events(iid: str, after: int = 0, p: Principal = Depends(limited)):
