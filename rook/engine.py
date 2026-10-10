@@ -11,11 +11,19 @@ from .domain import Action, Condition, Incident, IncidentStatus as IS, Status, f
 from .sandbox import Transient, Permanent, Timeout
 from . import policy
 from .verification import applied, build_conditions, evaluate, verify_action
-from .obs import span
+from .obs import log, span
 
 S = Status
 RUNNABLE = {S.authorized, S.retry_pending, S.executing, S.executed, S.unknown}
 UNRESOLVED_BAD = {S.failed, S.blocked, S.unknown}
+
+
+TOOL_DOCS = {
+    "disable_account": "Disable a user account on a connected service (sandbox)",
+    "issue_replacement": "Create a new version of a credential in the vault; old version stays valid",
+    "update_dependent": "Point an application or cloud service at the newest credential version",
+    "revoke_credential": "Permanently revoke one credential version in the vault",
+}
 
 
 class SimulatedCrash(BaseException):      # BaseException so no handler swallows it
@@ -234,7 +242,8 @@ class Engine:
     # ---- INVESTIGATE -> DEFINE CLOSURE -> PLAN -> AUTHORIZE ----
     def start(self, subject=None, org="acme", created_by="system", scenario=None, extra_actions=()):
         iid = "inc-" + uuid.uuid4().hex[:8]
-        with span("incident.start", incident=iid, org=org, scenario=scenario or "") as root:
+        with span("incident.start", session=iid, user=created_by, user_meta={"org": org},
+                  incident=iid, org=org, scenario=scenario or "") as root:
             if subject is None:                       # trigger: completed offboarding tickets
                 done = self.sb.pm.completed_offboardings()
                 subject = next(iter(done.values()))["subject"] if done else None
@@ -246,6 +255,8 @@ class Engine:
                        active_credentials=sum(r["rel"] == "owns_credential" and r["status"] == "active" for r in rel))
             with span("discover.dependencies", incident=iid) as sp:
                 deps = [d for r in rel if r["rel"] == "owns_credential" for d in r["dependents"]]
+                sp.retriever("config scan for " + ", ".join(r["fp"] for r in rel if r["rel"] == "owns_credential"),
+                             deps)
                 sp.set(dependents=len(deps), unrecorded=sum(len(r.get("unrecorded_dependents", [])) for r in rel
                                                             if r["rel"] == "owns_credential"))
             inc = Incident(id=iid, org=org, created_by=created_by, subject=subject, scenario=scenario or "custom",
@@ -285,6 +296,7 @@ class Engine:
                     else:
                         decision, reason, rule = policy.decide(a, inc, self.sb, plan)
                     sp.set(decision=decision, rule=rule)
+                    sp.guardrail(f"{a.type} {a.target}", decision != "blocked", f"{decision} ({rule}): {reason}")
                 seen.add(a.idem_key)
                 a.policy = {"decision": decision, "reason": reason, "rule": rule}
                 a.move({"authorized": S.authorized, "needs_approval": S.needs_approval}.get(decision, S.blocked))
@@ -306,9 +318,11 @@ class Engine:
             raise ValueError(f"{action_id} is {a.status.value}, not awaiting approval")
         inc = self.store.incident(iid)
         approval = {"by": principal.id, "roles": list(principal.roles), "org": principal.org}
-        with span("approval.decide", incident=iid, action=action_id, approver=principal.id) as sp:
+        with span("approval.decide", session=iid, user=principal.id, user_meta={"org": principal.org},
+                  incident=iid, action=action_id, approver=principal.id) as sp:
             decision, reason, rule = policy.decide(a, inc, self.sb, self.store.actions(iid), approval=approval)
             sp.set(decision=decision)
+            sp.guardrail(f"approve {a.type} {a.target} by {principal.id}", decision == "authorized", reason)
         if decision == "authorized":
             a.move(S.authorized)
             a.policy = {"decision": "authorized", "reason": reason, "rule": rule, "approval": approval}
@@ -350,14 +364,17 @@ class Engine:
 
     def _run(self, iid):
         steps = 0
-        with span("incident.run", incident=iid) as root:
-            inc = self.store.incident(iid)
+        inc = self.store.incident(iid)
+        with span("incident.run", session=iid, user=inc.created_by, user_meta={"org": inc.org},
+                  incident=iid) as root:
             acts = self.store.actions(iid)
             inflight = [a.id for a in acts if a.status in (S.executing, S.executed, S.unknown)]
             if inflight:
                 cp = self.store.last_checkpoint(iid)
                 with span("checkpoint.restore", incident=iid, checkpoint=cp["n"] if cp else 0,
                           inflight=len(inflight)):
+                    log("resuming from checkpoint {checkpoint}", checkpoint=cp["n"] if cp else None,
+                        in_flight=",".join(inflight))
                     self.store.audit(iid, "checkpoint_restored", {"checkpoint": cp["n"] if cp else None,
                                                                   "label": cp["label"] if cp else None,
                                                                   "in_flight": inflight})
@@ -417,6 +434,7 @@ class Engine:
             with span("reconcile", incident=iid, action=a.id, action_type=a.type, attempt=a.retries) as sp:
                 landed = applied(self.sb, a)
                 sp.set(applied=landed)
+                log("inspected live state for {action}: applied={applied}", action=a.id, applied=str(landed))
             if landed is True:
                 ok, ev = verify_action(self.sb, a)
                 a.evidence = ev
@@ -451,6 +469,7 @@ class Engine:
                 decision, reason, rule = policy.decide(a, inc, self.sb, self.store.actions(iid),
                                                        approval=a.policy.get("approval"))
                 sp.set(decision=decision, rule=rule)
+                sp.guardrail(f"pre-execution check {a.type} {a.target}", decision == "authorized", reason)
             if decision != "authorized":
                 a.move(S.blocked)
                 a.policy = {**a.policy, "decision": "blocked", "reason": reason, "rule": rule}
@@ -462,6 +481,8 @@ class Engine:
             try:
                 with span("execute", incident=iid, action=a.id, action_type=a.type, target=a.target,
                           adapter=a.params.get("service"), attempt=attempt) as sp:
+                    sp.tool(f"{a.params.get('service')}.{a.type}", TOOL_DOCS.get(a.type, a.type),
+                            {"target": a.target, "idempotency_key": a.idem_key, "attempt": attempt})
                     a.result = self._exec(a)
                     sp.set(outcome="ok", replayed=bool(a.result.get("replayed")))
                 self.store.tool_call(iid, a.id, attempt, "ok", a.result)
@@ -475,6 +496,8 @@ class Engine:
                 kind = "timeout" if isinstance(e, Timeout) else "transient"
                 a.result = {"error": f"{kind}: {e}"}
                 a.move(S.unknown)
+                log("{action} attempt {attempt} failed ({kind}); checkpointing before inspecting state",
+                    level="warning", action=a.id, attempt=attempt, kind=kind)
                 self.store.tool_call(iid, a.id, attempt, kind, {"error": str(e)})
                 self.store.audit(iid, f"{kind}_failure", {"action": a.id, "attempt": attempt, "error": str(e),
                                                           "next": "checkpoint, then inspect real state before retrying"})
@@ -495,6 +518,7 @@ class Engine:
             with span("verify", incident=iid, action=a.id, action_type=a.type) as sp:
                 ok, ev = verify_action(self.sb, a)
                 sp.set(result="pass" if ok else "fail" if ok is False else "inconclusive")
+                sp.guardrail(f"independent check of {a.type} {a.target}", ok is True, json.dumps(ev))
             a.evidence = ev
             if ok is True:
                 a.move(S.verified)
@@ -581,6 +605,8 @@ class Engine:
             rep = self.report(iid, live=True)
             sp.set(status=rep["status"], passed=sum(c["result"] is True for c in rep["conditions"]),
                    total=len(rep["conditions"]))
+            sp.guardrail("Verified Closure: " + ", ".join(c["id"] for c in rep["conditions"]),
+                         rep["status"] == IS.closed_verified.value, rep["closure_blocked_reason"] or rep["summary"])
         self.store.save_conditions(iid, [Condition(**c) for c in rep["conditions"]])
         inc = self.store.incident(iid)
         inc.status = rep["status"]
