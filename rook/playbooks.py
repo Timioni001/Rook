@@ -1069,13 +1069,23 @@ class ClinicCover:
 # leave a match without an official who is actually available.
 
 
+def shut_pitch(sb):
+    """The closure worth working: the shut pitch with the most matches on it.
+
+    More than one can be shut on a bad weekend, and the one that matters is the one people are
+    due at, not whichever happens to sort first.
+    """
+    shut = sb.league.closed_venues()
+    return max(shut, key=lambda v: (len(sb.league.at_venue(v)), v)) if shut else None
+
+
 def fixtures_subject(sb):
-    return sb.league.scope() if sb.league.closed_venues() else None
+    return sb.league.scope() if shut_pitch(sb) else None
 
 
 def investigate_fixtures(sb, subject):
     """What is at the closed pitch, where each match could go, who can run it, and who can be told."""
-    closed = sb.league.closed_venues()[0]
+    closed = shut_pitch(sb)
     affected = sb.league.at_venue(closed)
     slots = sb.league.open_slots()
     spares = sb.league.spare_officials()

@@ -36,6 +36,8 @@ SCENARIOS = {
     "faulty_update": ("billing-app accepts the update but stores the wrong key", {}, {"faulty_update": ["app:billing-app"]}),
     "regression_fail": ("billing-app is healthy but its payment regression test fails", {},
                         {"regression_fail": ["app:billing-app"]}),
+    "vault_down": ("The vault will not issue a replacement key, so the live one must not be revoked",
+                   {"vault.issue": ["transient"] * 20}, {}),
     # service outage playbook
     "outage": ("checkout-api's rollback call times out, but the rollback did happen",
                {"cloud.rollback": ["timeout_applied"]}, {}),
@@ -43,6 +45,9 @@ SCENARIOS = {
     "outage_wrong_cause": ("Rolling back does not fix checkout-api: the deploy is not the cause", {},
                            {"outage_persists": ["checkout-api"]}),
     "outage_rollback_down": ("The cloud's rollback API keeps failing", {"cloud.rollback": ["transient"] * 20}, {}),
+    "outage_pause_denied": ("The cloud refuses to pause auto-deploy, so Rook will not roll back into a "
+                            "pipeline that would redeploy the bad change over it",
+                            {"cloud.pipeline_pause": ["permanent"]}, {}),
     # leaked-secret playbook
     "leak": ("reports-app's config API returns a 503 once while Rook moves it to the new key",
              {"app.update_config": ["transient"]}, {}),
@@ -51,6 +56,8 @@ SCENARIOS = {
                              "pointless churn", {}, {"leak_already_revoked": True}),
     "leak_unattributed": ("The leaked key matches no credential Rook can attribute to an owner", {},
                           {"leak_unattributed": True}),
+    "leak_rotation_stuck": ("The reporting app never accepts the new key, so the leaked one stays live and "
+                            "Rook refuses to revoke it", {"app.update_config": ["transient"] * 20}, {}),
     # referral & result follow-up playbook
     "referral": ("The clinic's booking system fails once while Rook is booking the appointment",
                  {"booking.book": ["transient"]}, {}),
@@ -59,6 +66,8 @@ SCENARIOS = {
                           "and Rook will not touch it", {}, {"referral_critical": True}),
     "referral_unreachable": ("Every phone number on file for the patient is out of date, so she cannot "
                              "be told", {}, {"referral_unreachable": True}),
+    "referral_pharmacy_down": ("The pharmacy system is down, so the prescription never arrives and Rook "
+                               "will not mark the record finished", {"pharmacy.send": ["transient"] * 20}, {}),
     # a doctor calls in sick and their whole list has to be moved
     "cover": ("The appointment book rejects one move, then accepts it",
               {"schedule.move": ["transient"]}, {"doctor_off": "clin-okafor"}),
@@ -73,6 +82,9 @@ SCENARIOS = {
                    {"doctor_off": "clin-okafor", "slots_short": 6}),
     "cover_nobody_reachable": ("Nobody on the list can be contacted, so Rook moves none of them", {},
                                {"doctor_off": "clin-okafor", "unreachable_count": 12}),
+    "cover_message_fails": ("A text message fails on its first attempt and is retried without the "
+                            "appointment being moved twice", {"outreach.contact": ["transient"]},
+                            {"doctor_off": "clin-okafor", "slots_short": 3}),
     "referral_all_good": ("Everything the record says is done really is done, so there is nothing to fix", {},
                           {"care_all_done": True}),
     # a pitch is closed and a Saturday of fixtures has to be moved
@@ -86,6 +98,8 @@ SCENARIOS = {
                              "telling them", {}, {"venue_closed": "ven-east", "team_unreachable": "team-04"}),
     "fixtures_no_official": ("The spare referee is unavailable too, so one fixture has nobody to run it", {},
                              {"venue_closed": "ven-east", "officials_short": True}),
+    "fixtures_washout": ("Every pitch in the league is shut, so Rook moves nothing at all and says so", {},
+                         {"venue_closed": ["ven-east", "ven-west", "ven-civic"]}),
 }
 SCENARIO_PLAYBOOK = {k: "outage" for k in SCENARIOS if k.startswith("outage")}
 SCENARIO_PLAYBOOK |= {k: "leak" for k in SCENARIOS if k.startswith("leak")}
@@ -380,8 +394,8 @@ def _apply_seed_flags(s):
         for c in s["records"]["patients"][s["flags"]["patient_unreachable"]]["channels"]:
             c["status"] = "stale"
     closed = s["flags"].get("venue_closed")
-    if closed:
-        s["league"]["venues"][closed]["status"] = "closed"
+    for v in ([closed] if isinstance(closed, str) else closed or []):
+        s["league"]["venues"][v]["status"] = "closed"
     if s["flags"].get("pitch_slots") is not None:
         keep = s["flags"]["pitch_slots"]
         pool = [(v, t) for v, ts in s["league"]["free_slots"].items() for t in ts][:keep]
