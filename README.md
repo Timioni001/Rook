@@ -145,11 +145,18 @@ bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 
 ### Scenarios
 
+Grouped by industry in the dashboard: **Healthcare** (doctor off sick, care follow-up), **IT & security**
+(access & offboarding, leaked credential), **Engineering** (service outage), **Sport & clubs** (fixture
+cannot go ahead). Same engine and same proof in all four; only the sector's own words change.
+
+
 Access & offboarding: `signature`, `clean`, `ambiguous_applied`, `ambiguous_lost`, `persistent`, `permission_denied`, `revoke_noop` (the vault says the key is revoked but it still works), `replacement_invalid`, `faulty_update`, `regression_fail`.
 Service outage: `outage` (the rollback times out but did land), `outage_clean`, `outage_wrong_cause` (the rollback doesn't fix it), `outage_rollback_down`.
 Leaked credential: `leak` (a config API fails once mid-rotation), `leak_clean`, `leak_already_revoked` (the key is already dead, so Rook refuses to rotate it), `leak_unattributed` (the key matches no credential, so Rook refuses to touch it).
 Care follow-up: `referral_clean`, `referral` (the booking system fails once), `referral_critical` (one result is urgent, so Rook alerts a doctor and touches nothing else), `referral_unreachable` (the patient cannot be contacted, so Rook refuses to mark it done).
 Doctor off sick: `cover_clean` (12 appointments, all moved and everyone told), `cover` (one move fails and is reconciled), `cover_short` (only four slots free, so eight stay open for reception), `cover_half`, `cover_unreachable` (one patient has no working number, so Rook leaves her appointment alone), `cover_nobody_reachable` (Rook moves nobody at all).
+Fixture cannot go ahead: `fixtures_clean` (a pitch is shut with three matches on it: all moved, both clubs told, and an available official put on the match whose referee is away), `fixtures` (one move fails and is reconciled), `fixtures_short` (one slot for three matches), `fixtures_unreachable` (a club's group chat is dead, so Rook leaves their match alone), `fixtures_no_official` (nobody is left to referee one of them).
+
 `referral_all_good` is the opposite case: everything the record claims really did happen, so Rook closes it with no actions.
 
 ### Your own organisation, in your own words
@@ -193,7 +200,7 @@ web/ (Next.js)  ──/api proxy──▶  rook/api.py (FastAPI, bearer auth, or
                                      ▼
                           rook/engine.py  Rook: investigate → conditions → plan → policy
                           │      │        → execute → reconcile → verify → close/escalate
-                          │   rook/playbooks.py  doctor off sick, care follow-up, offboarding, outage, leaked key
+                          │   rook/playbooks.py  doctor off sick, care follow-up, fixtures, offboarding, outage, leaked key
              rook/policy.py  rook/verification.py (independent observers)
                           │
                 rook/sandbox.py  five stateful mock adapters, idempotency, failure injection

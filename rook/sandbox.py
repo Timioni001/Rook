@@ -75,16 +75,31 @@ SCENARIOS = {
                                {"doctor_off": "clin-okafor", "unreachable_count": 12}),
     "referral_all_good": ("Everything the record says is done really is done, so there is nothing to fix", {},
                           {"care_all_done": True}),
+    # a pitch is closed and a Saturday of fixtures has to be moved
+    "fixtures_clean": ("The main pitch is waterlogged with three fixtures on it. No injected faults", {},
+                       {"venue_closed": "ven-east"}),
+    "fixtures": ("The fixture system rejects one move, then accepts it", {"league.move": ["transient"]},
+                 {"venue_closed": "ven-east"}),
+    "fixtures_short": ("Only one slot is free anywhere else, so two fixtures cannot be moved at all", {},
+                       {"venue_closed": "ven-east", "pitch_slots": 1}),
+    "fixtures_unreachable": ("One club's group chat is dead, so Rook will not move their match without "
+                             "telling them", {}, {"venue_closed": "ven-east", "team_unreachable": "team-04"}),
+    "fixtures_no_official": ("The spare referee is unavailable too, so one fixture has nobody to run it", {},
+                             {"venue_closed": "ven-east", "officials_short": True}),
 }
 SCENARIO_PLAYBOOK = {k: "outage" for k in SCENARIOS if k.startswith("outage")}
 SCENARIO_PLAYBOOK |= {k: "leak" for k in SCENARIOS if k.startswith("leak")}
 SCENARIO_PLAYBOOK |= {k: "care" for k in SCENARIOS if k.startswith("referral")}
 SCENARIO_PLAYBOOK |= {k: "cover" for k in SCENARIOS if k.startswith("cover")}
+SCENARIO_PLAYBOOK |= {k: "fixtures" for k in SCENARIOS if k.startswith("fixtures")}
 
 
 def playbook_of(scenario):
     return SCENARIO_PLAYBOOK.get(scenario or "", "offboarding")
 
+
+# The Saturday the fixtures are played on, kept apart from the clinic's day above.
+MATCH_DAY = "2026-10-17"
 
 # A single clinic day: one doctor's list, and the colleagues who could absorb it.
 DAY = "2026-10-12"
@@ -247,6 +262,37 @@ def seed(patients=None) -> dict:
             "free_slots": _day_free,
             "off_today": [],
         },
+        # ---- a Saturday of fixtures: the same coordination problem, outside healthcare ----
+        "league": {
+            "club": "northgate",
+            "venues": {"ven-east": {"name": "East Park pitch 1", "status": "open"},
+                       "ven-west": {"name": "West Lane 3G", "status": "open"},
+                       "ven-civic": {"name": "Civic Centre hall", "status": "open"}},
+            # ref-03 is away this weekend, so one fixture needs a different official before it can
+            # be moved at all. ref-04 is the spare who makes that possible.
+            "officials": {"ref-01": {"name": "Sam Idowu", "available": True},
+                          "ref-02": {"name": "Dami Okonjo", "available": True},
+                          "ref-03": {"name": "Petra Novak", "available": False},
+                          "ref-04": {"name": "Grace Mutua", "available": True}},
+            "teams": {t: {"name": n, "contacts": [{"kind": "team group chat", "value": c, "status": "active"}]}
+                      for t, n, c in (
+                          ("team-01", "Harbour Rangers U12", "Rangers U12 parents"),
+                          ("team-02", "Eastside Colts U12", "Colts U12 parents"),
+                          ("team-03", "Northgate Athletic U15", "Athletic U15 squad"),
+                          ("team-04", "Riverbank Youth U15", "Riverbank U15 squad"),
+                          ("team-05", "Northgate Athletic first team", "Athletic firsts"),
+                          ("team-06", "Dockside United", "Dockside squad"))},
+            "fixtures": {
+                "fx-01": {"home": "team-01", "away": "team-02", "venue": "ven-east", "official": "ref-01",
+                          "at": f"{MATCH_DAY}T09:30:00Z", "status": "on", "grade": "U12 league"},
+                "fx-02": {"home": "team-03", "away": "team-04", "venue": "ven-east", "official": "ref-03",
+                          "at": f"{MATCH_DAY}T11:00:00Z", "status": "on", "grade": "U15 cup"},
+                "fx-03": {"home": "team-05", "away": "team-06", "venue": "ven-east", "official": "ref-02",
+                          "at": f"{MATCH_DAY}T13:00:00Z", "status": "on", "grade": "first team league"}},
+            "free_slots": {"ven-west": [f"{MATCH_DAY}T10:00:00Z", f"{MATCH_DAY}T12:00:00Z"],
+                           "ven-civic": [f"{MATCH_DAY}T14:00:00Z"]},
+            "messages": [],
+        },
         "pharmacy": {"received": [], "dispensed": []},   # the pharmacy never got ord-7743
         "outreach": {"messages": [{"patient": "pat-rivera", "kind": "text message", "value": "mobile ending 0455",
                                    "delivered": True, "responded": True}]},
@@ -258,7 +304,7 @@ def seed(patients=None) -> dict:
 
 
 # The first write each playbook makes, so "one step fails" means the same thing everywhere.
-FLAKY_POINTS = ("schedule.move", "booking.book", "records.resend", "pharmacy.send",
+FLAKY_POINTS = ("schedule.move", "league.move", "booking.book", "records.resend", "pharmacy.send",
                 "app.update_config", "cloud.rollback", "vault.issue")
 
 
@@ -286,8 +332,10 @@ def _apply_setup_identity(s, setup):
     name, about = setup.get("organisation"), setup.get("we_do")
     if name:
         s["records"]["clinic"] = name
-        # What the care playbooks are scoped to, so a refusal says "belongs to <their name>".
+        # What the care and fixture playbooks are scoped to, so a refusal says "belongs to <their name>".
         s["records"]["scope"] = name
+        s["league"]["club"] = name
+        s["league"]["scope"] = name
     profile = {"name": name, "about": about,
                "who_reports": setup.get("who_reports"), "who_approves": setup.get("who_approves")}
     profile = {k: v for k, v in profile.items() if v}
@@ -297,6 +345,7 @@ def _apply_setup_identity(s, setup):
     if away:
         for a, b, c in AWAY:
             s[a][b][c]["name"] = away
+        s["league"]["officials"]["ref-03"]["name"] = away      # the official who cannot make it
         was = s["directory"]["ident-jdoe"]["name"]       # the person who left, for offboarding
         s["directory"]["ident-jdoe"]["name"] = away
         for t in s["pm"]["tickets"].values():
@@ -330,6 +379,22 @@ def _apply_seed_flags(s):
     if s["flags"].get("patient_unreachable"):
         for c in s["records"]["patients"][s["flags"]["patient_unreachable"]]["channels"]:
             c["status"] = "stale"
+    closed = s["flags"].get("venue_closed")
+    if closed:
+        s["league"]["venues"][closed]["status"] = "closed"
+    if s["flags"].get("pitch_slots") is not None:
+        keep = s["flags"]["pitch_slots"]
+        pool = [(v, t) for v, ts in s["league"]["free_slots"].items() for t in ts][:keep]
+        s["league"]["free_slots"] = {v: [] for v in s["league"]["free_slots"]}
+        for v, t in pool:
+            s["league"]["free_slots"][v].append(t)
+    if s["flags"].get("team_unreachable"):
+        for c in s["league"]["teams"][s["flags"]["team_unreachable"]]["contacts"]:
+            c["status"] = "stale"
+    if s["flags"].get("officials_short"):
+        for o in s["league"]["officials"].values():        # nobody spare is left on the list
+            if o["available"] and o["name"] == "Grace Mutua":
+                o["available"] = False
     if s["flags"].get("care_all_done"):
         # The honest opposite of the usual case: every handoff really did complete.
         s["booking"]["inboxes"]["cardiology"]["received"].append("ord-7741")
@@ -796,6 +861,131 @@ class Outreach(Adapter):
         return self.core.mutate("outreach.contact", idem, fn)
 
 
+class League(Adapter):
+    """Adapter 10: a club's fixture list, the pitches it can use, its officials and its teams.
+
+    The same shape of problem as a clinic's appointment book, in a place nobody would call a
+    clinic: something becomes unavailable, bookings have to move, and the people waiting have to
+    be told before the change means anything.
+    """
+    def club(self):
+        return self.s["league"]["club"]
+
+    def scope(self):
+        return self.s["league"].get("scope") or f"club:{self.club()}"
+
+    def venues(self):
+        return self.s["league"]["venues"]
+
+    def venue_name(self, vid):
+        return self.venues().get(vid, {}).get("name", vid)
+
+    def closed_venues(self):
+        return [v for v, x in sorted(self.venues().items()) if x["status"] == "closed"]
+
+    def fixtures(self):
+        return self.s["league"]["fixtures"]
+
+    def fixture(self, fid):
+        return self.fixtures().get(fid)
+
+    def at_venue(self, vid):
+        return {f: x for f, x in self.fixtures().items() if x["venue"] == vid and x["status"] == "on"}
+
+    def officials(self):
+        return self.s["league"]["officials"]
+
+    def official_name(self, oid):
+        return self.officials().get(oid, {}).get("name", oid)
+
+    def official_available(self, oid):
+        return bool(self.officials().get(oid, {}).get("available"))
+
+    def spare_officials(self):
+        """Available officials with no fixture of their own. One match each on a Saturday."""
+        taken = {x["official"] for x in self.fixtures().values() if x["status"] == "on"}
+        return [o for o, x in sorted(self.officials().items()) if x["available"] and o not in taken]
+
+    def free_slots(self, vid=None):
+        f = self.s["league"]["free_slots"]
+        return list(f.get(vid, [])) if vid else {v: list(ts) for v, ts in f.items()}
+
+    def open_slots(self):
+        """Free slots at pitches that are actually open, earliest first."""
+        return sorted(((v, t) for v, ts in self.free_slots().items() for t in ts
+                       if self.venues().get(v, {}).get("status") == "open"), key=lambda x: x[1])
+
+    def team(self, tid):
+        return self.s["league"]["teams"].get(tid, {})
+
+    def team_name(self, tid):
+        return self.team(tid).get("name", tid)
+
+    def best_contact(self, tid):
+        return next((c for c in self.team(tid).get("contacts", []) if c["status"] == "active"), None)
+
+    def messages(self, fid=None):
+        return [m for m in self.s["league"]["messages"] if fid is None or m["fixture"] == fid]
+
+    def told(self, fid):
+        """Told means both sides answered. A message into a dead group chat is not telling anyone."""
+        x = self.fixture(fid)
+        if x is None:
+            return False
+        answered = {m["team"] for m in self.messages(fid) if m["responded"]}
+        return {x["home"], x["away"]} <= answered
+
+    def clashes(self):
+        seen, out = {}, []
+        for fid, x in sorted(self.fixtures().items()):
+            if x["status"] != "on":
+                continue
+            key = (x["venue"], x["at"])
+            if key in seen:
+                out.append({"venue": x["venue"], "at": x["at"], "fixtures": [seen[key], fid]})
+            seen[key] = fid
+        return out
+
+    def move(self, fid, to_venue, to_time, idem):
+        def fn():
+            x = self.fixtures()[fid]
+            slots = self.s["league"]["free_slots"].get(to_venue, [])
+            if to_time not in slots:
+                raise Permanent("that slot is no longer free")
+            if self.venues()[to_venue]["status"] != "open":
+                raise Permanent("that pitch is not open either")
+            slots.remove(to_time)
+            self.s["league"]["free_slots"].setdefault(x["venue"], []).append(x["at"])
+            x["venue"], x["at"] = to_venue, to_time
+            return {"fixture": fid, "venue": to_venue, "at": to_time}
+        return self.core.mutate("league.move", idem, fn)
+
+    def assign_official(self, fid, oid, idem):
+        def fn():
+            if not self.official_available(oid):
+                raise Permanent("that official is not available")
+            self.fixtures()[fid]["official"] = oid
+            return {"fixture": fid, "official": oid}
+        return self.core.mutate("league.assign", idem, fn)
+
+    def tell(self, fid, idem):
+        """Tell both sides. Whether it reached them depends on the contact they left us."""
+        def fn():
+            x = self.fixtures()[fid]
+            sent = []
+            for tid in (x["home"], x["away"]):
+                ch = self.best_contact(tid)
+                live = ch is not None
+                self.s["league"]["messages"].append(
+                    {"fixture": fid, "team": tid, "kind": ch["kind"] if ch else "none",
+                     "value": ch["value"] if ch else "", "delivered": live, "responded": live})
+                sent.append({"team": tid, "delivered": live})
+            if not all(m["delivered"] for m in sent):
+                raise Permanent("one of the teams has no working contact on file")
+            return {"fixture": fid, "told": sent}
+        return self.core.mutate("league.tell", idem, fn)
+
+
 class Sandbox:
     def __init__(self, store, failures=None, flags=None, scenario=None, setup=None):
         self.store = store
@@ -815,6 +1005,7 @@ class Sandbox:
         self.outreach = Outreach(self)
         self.pharmacy = Pharmacy(self)
         self.schedule = Schedule(self)
+        self.league = League(self)
 
     @staticmethod
     def _seeded(failures=None, flags=None, scenario=None, setup=None):

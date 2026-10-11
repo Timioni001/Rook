@@ -145,6 +145,38 @@ def _session_cleared(sb, a):
                                        for k, v in sorted(left.items())]}
 
 
+def _fixture_playable(sb, a):
+    """The fixture is at a pitch that is open, and it is not the one that was shut."""
+    x = sb.league.fixture(a["fixture"])
+    ok = bool(x) and x["venue"] != a["closed_venue"] and sb.league.venues()[x["venue"]]["status"] == "open"
+    return ok, {"venue": sb.league.venue_name(x["venue"]) if x else None, "at": x["at"] if x else None}
+
+
+def _fixture_has_official(sb, a):
+    x = sb.league.fixture(a["fixture"])
+    oid = x["official"] if x else None
+    ok = bool(oid) and sb.league.official_available(oid)
+    return ok, {"official": sb.league.official_name(oid) if oid else None, "available": ok}
+
+
+def _teams_told(sb, a):
+    """Told means both clubs answered, not that two messages were sent into group chats."""
+    msgs = sb.league.messages(a["fixture"])
+    return sb.league.told(a["fixture"]), {
+        "replies": [{"team": sb.league.team_name(m["team"]), "delivered": m["delivered"],
+                     "responded": m["responded"]} for m in msgs]}
+
+
+def _no_venue_clash(sb, a):
+    clashes = sb.league.clashes()
+    return not clashes, {"clashes": clashes}
+
+
+def _venue_cleared(sb, a):
+    left = sb.league.at_venue(a["venue"])
+    return not left, {"still_there": [{"fixture": f, "at": x["at"]} for f, x in sorted(left.items())]}
+
+
 def _prescription_at_pharmacy(sb, a):
     there = sb.pharmacy.has(a["order"])
     return there, {"at_pharmacy": there, "dispensed": sb.pharmacy.dispensed(a["order"])}
@@ -185,6 +217,11 @@ OBSERVERS = {
     "clinician_notified": _clinician_notified,
     "clinician_acknowledged": _clinician_acknowledged,
     "loop_closed_in_record": _loop_closed_in_record,
+    "fixture_playable": _fixture_playable,
+    "fixture_has_official": _fixture_has_official,
+    "teams_told": _teams_told,
+    "no_venue_clash": _no_venue_clash,
+    "venue_cleared": _venue_cleared,
 }
 
 
@@ -309,6 +346,12 @@ CONTROLS = {
     "no_double_booking": ("Care continuity", "Patient safety", "No two people were put in the same slot"),
     "session_cleared": ("Care continuity", "Patient safety",
                         "Nobody is left booked with a doctor who is not coming in"),
+    "fixture_playable": ("Fixture duty", "Participant safety", "The match is somewhere it can actually be played"),
+    "fixture_has_official": ("Fixture duty", "Participant safety",
+                             "A qualified official is on the match, so it is not played unsupervised"),
+    "teams_told": ("Fixture duty", "Duty of care", "Both clubs know the new time, and answered"),
+    "no_venue_clash": ("Fixture duty", "Participant safety", "No two matches were put on the same pitch at once"),
+    "venue_cleared": ("Fixture duty", "Participant safety", "Nothing is still scheduled at the closed pitch"),
 }
 
 
@@ -422,6 +465,39 @@ def cover_conditions(rel):
     return conds
 
 
+def fixtures_conditions(rel):
+    """What has to be true before a washed-out Saturday can be called sorted."""
+    closed = next(r for r in rel if r["rel"] == "closure")
+    conds = []
+    for m in (r for r in rel if r["rel"] == "fixture"):
+        if not m["movable"]:
+            continue
+        conds.append(Condition(
+            id=f"{m['fixture']}-playable",
+            description=f"{m['home_name']} v {m['away_name']} is on a pitch that is open",
+            expected="the fixture is not at the closed pitch", method="fixture_playable",
+            args={"fixture": m["fixture"], "closed_venue": closed["venue"]}))
+        conds.append(Condition(
+            id=f"{m['fixture']}-official",
+            description=f"{m['home_name']} v {m['away_name']} has an official who is available",
+            expected="an available official is on the fixture", method="fixture_has_official",
+            args={"fixture": m["fixture"]}))
+        conds.append(Condition(
+            id=f"{m['fixture']}-told",
+            description=f"Both clubs in {m['home_name']} v {m['away_name']} have answered",
+            expected="both teams were told and replied", method="teams_told",
+            args={"fixture": m["fixture"]}))
+    conds.append(Condition(
+        id="no-pitch-clash", description="No two matches were put on the same pitch at the same time",
+        expected="no two fixtures share a pitch and a kick-off", method="no_venue_clash", args={}))
+    conds.append(Condition(
+        id="pitch-cleared",
+        description=f"Nothing is still scheduled at {closed['venue_name']}, which is shut",
+        expected="the closed pitch has no fixtures left", method="venue_cleared",
+        args={"venue": closed["venue"]}))
+    return conds
+
+
 def evaluate(sb, conds):
     out = []
     for c in conds:
@@ -481,6 +557,13 @@ def checks_for(a):
     if a.type == "move_appointment":
         return [("appointment_moved", {"appointment": a.target, "from_doctor": p["from_doctor"]}),
                 ("no_double_booking", {})]
+    if a.type == "move_fixture":
+        return [("fixture_playable", {"fixture": a.target, "closed_venue": p["from_venue"]}),
+                ("no_venue_clash", {})]
+    if a.type == "assign_official":
+        return [("fixture_has_official", {"fixture": a.target})]
+    if a.type == "tell_teams":
+        return [("teams_told", {"fixture": a.target})]
     return None
 
 
@@ -530,6 +613,14 @@ def applied(sb, a):
         if a.type == "move_appointment":
             ap = sb.schedule.appointment(a.target)
             return bool(ap) and ap["doctor"] == p["to_doctor"] and ap["at"] == p["to_time"]
+        if a.type == "move_fixture":
+            x = sb.league.fixture(a.target)
+            return bool(x) and x["venue"] == p["to_venue"] and x["at"] == p["to_time"]
+        if a.type == "assign_official":
+            x = sb.league.fixture(a.target)
+            return bool(x) and x["official"] == p["official"]
+        if a.type == "tell_teams":
+            return bool(sb.league.messages(a.target))
     except Exception:
         return None
     return None

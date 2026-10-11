@@ -37,6 +37,9 @@ TOOL_DOCS = {
     "close_loop": "Mark the referral loop closed in the record",
     "resend_prescription": "Send a prescription to the pharmacy again",
     "move_appointment": "Move an appointment to another doctor and time",
+    "move_fixture": "Move a fixture to another pitch and kick-off time",
+    "assign_official": "Put an available official on a fixture",
+    "tell_teams": "Tell both clubs in a fixture what has changed",
 }
 # What undoing each action would take, shown to approvers and reviewers.
 UNDO = {
@@ -55,6 +58,9 @@ UNDO = {
     "close_loop": "Yes. The record can be reopened.",
     "resend_prescription": "Yes. The prescription can be cancelled with the pharmacy.",
     "move_appointment": "Yes. The appointment can be moved back if the slot is still free.",
+    "move_fixture": "Yes. The fixture can be moved back if the slot is still free.",
+    "assign_official": "Yes. Another available official can be put on instead.",
+    "tell_teams": "No. A message to two clubs cannot be unsent.",
 }
 
 
@@ -509,6 +515,12 @@ class Engine:
             return self.sb.pharmacy.send(a.target, a.idem_key)
         if a.type == "move_appointment":
             return self.sb.schedule.move(a.target, p["to_doctor"], p["to_time"], a.idem_key)
+        if a.type == "move_fixture":
+            return self.sb.league.move(a.target, p["to_venue"], p["to_time"], a.idem_key)
+        if a.type == "assign_official":
+            return self.sb.league.assign_official(a.target, p["official"], a.idem_key)
+        if a.type == "tell_teams":
+            return self.sb.league.tell(a.target, a.idem_key)
         raise Permanent("unsupported action")
 
     # ---- compensation: undo a dependent update that broke the service ----

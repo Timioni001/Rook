@@ -18,6 +18,7 @@ const PERSON_AWAY: Record<string, { label: string; hint: string }> = {
   cover: { label: 'The doctor who is off today', hint: 'Dr Kofi Mensah' },
   care: { label: 'The doctor whose patients these are', hint: 'Dr Lin Wei' },
   offboarding: { label: 'The person who left', hint: 'Marcus Ngata' },
+  fixtures: { label: 'The official who cannot make it', hint: 'Petra Novak' },
 }
 const COLLEAGUES: Record<string, string[]> = {
   cover: ['A colleague who could take some of the list', 'Another colleague who could'],
@@ -53,12 +54,27 @@ const SETUP_TOGGLES: Record<string, { key: string; label: string }[]> = {
 }
 const ALWAYS_TOGGLE = { key: 'one_step_fails', label: 'Make one step fail once, to watch Rook recover' }
 
+// The same engine, grouped by the kind of place it is working in. A visitor picks the industry
+// closest to theirs first, which is a shorter question than "which of five incident types".
+const INDUSTRIES: { key: string; label: string; blurb: string; playbooks: string[] }[] = [
+  { key: 'health', label: 'Healthcare', blurb: 'Clinics, practices and anywhere people are booked in to be seen.',
+    playbooks: ['cover', 'care'] },
+  { key: 'it', label: 'IT & security', blurb: 'Accounts, keys and the access that outlives the person who had it.',
+    playbooks: ['offboarding', 'leak'] },
+  { key: 'engineering', label: 'Engineering', blurb: 'Production services, deployments and the change that broke one.',
+    playbooks: ['outage'] },
+  { key: 'sport', label: 'Sport & clubs', blurb: 'Fixtures, venues and officials, and the teams waiting to be told.',
+    playbooks: ['fixtures'] },
+]
+const industryOf = (pb: string) => INDUSTRIES.find((i) => i.playbooks.includes(pb))?.key || 'health'
+
 const PLAYBOOK_NAME: Record<string, string> = {
   offboarding: 'Access & offboarding',
   outage: 'Service outage',
   leak: 'Leaked credential',
   care: 'Care follow-up',
   cover: 'Doctor off sick',
+  fixtures: 'Fixture cannot go ahead',
 }
 
 const Pill = ({ tone, children }: { tone: string; children: React.ReactNode }) =>
@@ -110,6 +126,12 @@ export default function Page() {
   const [scenarios, setScenarios] = useState<any[]>([])
   const [scenario, setScenario] = useState('cover_clean')
   const [playbook, setPlaybook] = useState('cover')
+  const [industry, setIndustry] = useState('health')
+  const pickIndustry = (k: string) => {
+    setIndustry(k)
+    const first = (INDUSTRIES.find((i) => i.key === k)?.playbooks || []).find((pb) => PLAYBOOK_COPY[pb])
+    if (first) pickPlaybook(first)
+  }
   const pickPlaybook = (k: string) => {
     setPlaybook(k)
     setSetup({})                       // the knobs belong to the problem type that is showing
@@ -156,7 +178,10 @@ export default function Page() {
       const saved = JSON.parse(raw)
       if (saved.setup) setSetup(saved.setup)
       if (saved.reported) setReported(saved.reported)
-      if (saved.playbook) { setPlaybook(saved.playbook); setScenario(saved.scenario || 'cover_clean') }
+      if (saved.playbook) {
+        setPlaybook(saved.playbook); setIndustry(industryOf(saved.playbook))
+        setScenario(saved.scenario || 'cover_clean')
+      }
     } catch { /* storage unavailable or not ours: start blank */ }
   }, [])
   useEffect(() => {
@@ -246,7 +271,7 @@ export default function Page() {
             <a href="#timeline">Timeline</a>
           </div>
           <label className="who">
-            <span className="sr-only">Signed in as (demo identity)</span>
+            <span className="sr-only">Who you are using the demo as. Real sign-in is coming soon.</span>
             <select id="who" value={who.key} onChange={(e) => setWho(e.target.value)}>
               {identityList(setup).map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
             </select>
@@ -266,15 +291,26 @@ export default function Page() {
         <header className="hero" id="top">
           <div className="hero-copy">
             <h1>Start with a problem. Rook takes it from there.</h1>
-            <p className="lead">Tell Rook about your own clinic or company, or pick a written example. Either way
-              it investigates, proposes, waits for you, then proves what it did.</p>
+            <p className="lead">Every industry runs on work that falls between its systems: a clinic, an
+              engineering team, an IT department, a sports club. Pick the one closest to yours, or tell Rook
+              about your own organisation.</p>
             <div className="hero-form">
-              <span className="mono small">Incident type</span>
+              <span className="mono small">Industry</span>
+              <div className="row industries" role="group" aria-label="Industry">
+                {INDUSTRIES.filter((i) => i.playbooks.some((pb) => PLAYBOOK_COPY[pb])).map((i) => (
+                  <button key={i.key} className={`chip ind ${industry === i.key ? 'sel' : ''}`}
+                    aria-pressed={industry === i.key} onClick={() => pickIndustry(i.key)}>
+                    <b>{i.label}</b>
+                  </button>
+                ))}
+              </div>
+              <p className="small muted ind-blurb">{INDUSTRIES.find((i) => i.key === industry)?.blurb}</p>
+              <span className="mono small">What has gone wrong</span>
               <div className="row playbooks" role="group" aria-label="Incident type">
-                {Object.entries(PLAYBOOK_COPY).map(([k, c]) => (
+                {(INDUSTRIES.find((i) => i.key === industry)?.playbooks || []).filter((k) => PLAYBOOK_COPY[k]).map((k) => (
                   <button key={k} className={`chip ${playbook === k ? 'sel' : ''}`} aria-pressed={playbook === k} onClick={() => pickPlaybook(k)}>
                     <b>{PLAYBOOK_NAME[k] || k}</b>
-                    <span className="small">{c.pitch}</span>
+                    <span className="small">{PLAYBOOK_COPY[k].pitch}</span>
                   </button>
                 ))}
               </div>
@@ -315,7 +351,8 @@ export default function Page() {
           onTry={(pb: string, sc: string) => { setPlaybook(pb); setScenario(sc); setId(null); setD(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
 
         <p className="strip mono" role="note">
-          <span>sandbox</span><span>mock integrations</span><span>org {me?.org || '…'}</span><span>{me ? me.roles.join(' + ') : 'loading'}</span>
+          <span>sandbox</span><span>mock integrations</span><span>org {me?.org || '…'}</span>
+          <span>{me ? me.roles.join(' + ') : 'loading'}</span><span>sign-in coming soon</span>
         </p>
 
         {err && !waking && (
@@ -433,7 +470,7 @@ export default function Page() {
             {/* Graph + findings */}
             <section className="section">
               <SectionTitle label="What is connected" text="Discovered by Rook, with each node updated as actions are verified." />
-              <div className="card"><Graph graph={R.incident.graph} live={liveState(R.actions, R.incident.graph)} /></div>
+              <div className="card"><Graph graph={R.incident.graph} live={liveState(R.actions, R.incident.graph)} playbook={R.playbook?.key} /></div>
             </section>
 
             <section className="section">
@@ -591,9 +628,9 @@ export default function Page() {
                     <li>An agent that works out what happened and coordinates the fix across all of them.</li>
                     <li>Approval on anything sensitive, a full audit trail, and proof the work actually landed.</li>
                   </ul>
-                  <p className="small muted">Rook does not replace a clinic\u2019s appointment book or a company\u2019s
-                    accounting software. It works across them, on the problems that otherwise need a person to chase
-                    information and coordinate a fix by hand.</p>
+                  <p className="small muted">Rook does not replace a clinic&rsquo;s appointment book, a club&rsquo;s
+                    fixture list or a company&rsquo;s accounting software. It works across them, on the problems that
+                    otherwise need a person to chase information and coordinate a fix by hand.</p>
                   <h3 className="h4" style={{ marginTop: 18 }}>Try one</h3>
                   <p><b>A doctor calls in sick:</b> twelve people are booked in and none of them know. Rook finds who
                     is affected, finds colleagues with room, moves each appointment and tells each person. Anyone it
@@ -602,7 +639,10 @@ export default function Page() {
                   <p><b>Things marked done that never happened:</b> a referral, a test result and a prescription the
                     record calls finished. Rook asks the clinic, the pharmacy and the doctor they were meant to
                     reach. Three of the four never happened. The fourth really did, so Rook says so and leaves it.</p>
-                  <p><b>The same engine on infrastructure:</b> a contractor\u2019s API key still running two services,
+                  <p><b>A pitch is shut on a Saturday:</b> three matches, six clubs and three referees. Rook finds
+                    which pitches are open, moves each match, puts an available official on the one whose referee is
+                    away, and tells both clubs. A club whose group chat is dead keeps its match where it is.</p>
+                  <p><b>The same engine on infrastructure:</b> a contractor&rsquo;s API key still running two services,
                     a service failing right after a change, a live key found in a repository. Same investigate,
                     approve, verify, prove.</p>
                 </div>

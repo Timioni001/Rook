@@ -253,6 +253,11 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .own-field { display: grid; grid-template-columns: 1fr 92px; gap: 12px; align-items: center }
 .own-field input { border: 1.5px solid var(--ink); border-radius: 10px; padding: 8px 10px; font: inherit;
                    font-size: 15px; background: var(--paper); width: 100% }
+.industries { gap: 8px }
+.chip.ind { padding: 8px 14px; border-radius: 999px }
+.ind-blurb { margin: 2px 0 6px }
+.graph-hint { display: none }
+@media (max-width: 680px) { .graph-hint { display: block; margin: 0 0 6px } }
 .own-text { display: grid; gap: 5px }
 .own-text input, .own-text textarea { border: 1.5px solid var(--ink); border-radius: 10px; padding: 8px 10px;
                    font: inherit; font-size: 15px; background: var(--paper); width: 100%; resize: vertical }

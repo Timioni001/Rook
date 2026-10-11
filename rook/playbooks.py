@@ -12,9 +12,9 @@ investigate it, the remediation it plans, and the closure checks that must hold 
 """
 import datetime
 from .domain import Action
-from .sandbox import DAY, SPECIALTY, playbook_of
-from .verification import (build_conditions, care_conditions, cover_conditions, leak_conditions,
-                           outage_conditions)
+from .sandbox import DAY, MATCH_DAY, SPECIALTY, playbook_of
+from .verification import (build_conditions, care_conditions, cover_conditions, fixtures_conditions,
+                           leak_conditions, outage_conditions)
 
 
 # ================================================================ playbook: access & offboarding
@@ -110,6 +110,11 @@ def explain(person, rel):
 
 
 # ---------------------------------------------------------------- planning
+
+def sentence(t):
+    """Start a reason with a capital without flattening the names inside it."""
+    return t[:1].upper() + t[1:] if t else t
+
 
 def make_action(iid, n, type, target, params, depends_on=(), summary="", risk="low"):
     return Action(id=f"{iid}-a{n}", incident_id=iid, type=type, target=target, params=params,
@@ -1035,7 +1040,7 @@ class ClinicCover:
             if m["rel"] != "booking" or m["movable"]:
                 continue
             out.append({"what": f"Move {m['patient_name']}'s {m['time']} appointment",
-                        "why": f"{m['why_not'].capitalize()}. Moving someone who will not hear about it means "
+                        "why": f"{sentence(m['why_not'])}. Moving someone who will not hear about it means "
                                "they turn up to a time that no longer exists, so Rook leaves it for reception.",
                         "rule": "R9-truthful-record"})
         return out
@@ -1053,7 +1058,204 @@ class ClinicCover:
         return []
 
 
-PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage(), LeakedSecret(), CareFollowUp(), ClinicCover())}
+# ================================================================ playbook: a fixture cannot go ahead
+#
+# A pitch is shut on a Saturday morning and three matches are booked on it. Six clubs, three
+# officials and a league secretary who otherwise spends the morning on the phone. Nothing about it
+# is medical, and it is the same job as the clinic's: find what is affected, find where it can go,
+# and do not tell anyone a kick-off time that is not real.
+#
+# The rule that matters: Rook will not move a fixture it cannot tell both clubs about, and will not
+# leave a match without an official who is actually available.
+
+
+def fixtures_subject(sb):
+    return sb.league.scope() if sb.league.closed_venues() else None
+
+
+def investigate_fixtures(sb, subject):
+    """What is at the closed pitch, where each match could go, who can run it, and who can be told."""
+    closed = sb.league.closed_venues()[0]
+    affected = sb.league.at_venue(closed)
+    slots = sb.league.open_slots()
+    spares = sb.league.spare_officials()
+    rel = [{"rel": "closure", "venue": closed, "venue_name": sb.league.venue_name(closed),
+            "day": MATCH_DAY, "affected": len(affected), "open_slots": len(slots),
+            "elsewhere": {sb.league.venue_name(v): len([t for vv, t in slots if vv == v])
+                          for v, _ in slots}}]
+    for fid, x in sorted(affected.items()):
+        slot = slots.pop(0) if slots else None
+        official, needs_official = x["official"], not sb.league.official_available(x["official"])
+        if needs_official:
+            official = spares.pop(0) if spares else None
+        contacts = {t: sb.league.best_contact(t) for t in (x["home"], x["away"])}
+        unreachable = [sb.league.team_name(t) for t, c in contacts.items() if c is None]
+        rel.append({"rel": "fixture", "fixture": fid, "grade": x["grade"],
+                    "home": x["home"], "home_name": sb.league.team_name(x["home"]),
+                    "away": x["away"], "away_name": sb.league.team_name(x["away"]),
+                    "at": x["at"], "time": x["at"][11:16],
+                    "to_venue": slot[0] if slot else None,
+                    "to_venue_name": sb.league.venue_name(slot[0]) if slot else None,
+                    "to_time": slot[1] if slot else None,
+                    "new_time": slot[1][11:16] if slot else None,
+                    "official": official, "needs_official": needs_official,
+                    "official_name": sb.league.official_name(official) if official else None,
+                    "was_official_name": sb.league.official_name(x["official"]),
+                    "unreachable": unreachable,
+                    # A match moves only if it has somewhere to go, someone to run it, and two
+                    # clubs that can be told.
+                    "movable": bool(slot and official and not unreachable),
+                    "why_not": (None if slot and official and not unreachable else
+                                "no other pitch has a free slot" if not slot else
+                                "no official is available to run it" if not official else
+                                f"no working contact for {unreachable[0]}")})
+    return rel[0], rel, fixtures_graph(rel), fixtures_findings(rel)
+
+
+def fixtures_graph(rel):
+    shut = rel[0]
+    nodes = [{"id": shut["venue"], "kind": "identity", "label": shut["venue_name"],
+              "status": "closed today", "detail": f"{shut['affected']} matches booked on it"}]
+    edges = []
+    for m in (r for r in rel if r["rel"] == "fixture"):
+        nodes.append({"id": m["fixture"], "kind": "credential",
+                      "label": f"{m['time']} \u00b7 {m['home_name']} v {m['away_name']}",
+                      "status": "can be moved" if m["movable"] else "stuck", "detail": m["grade"]})
+        edges.append({"from": shut["venue"], "to": m["fixture"], "rel": "was on"})
+        if m["movable"]:
+            nodes.append({"id": m["to_venue"], "kind": "dependent", "label": m["to_venue_name"],
+                          "status": "open, has a slot", "detail": ""})
+            edges.append({"from": m["fixture"], "to": m["to_venue"], "rel": "moves to"})
+    seen, uniq = set(), []
+    for n in nodes:
+        if n["id"] not in seen:
+            seen.add(n["id"])
+            uniq.append(n)
+    return {"nodes": uniq, "edges": edges}
+
+
+def fixtures_findings(rel):
+    shut = rel[0]
+    games = [r for r in rel if r["rel"] == "fixture"]
+    movable = [m for m in games if m["movable"]]
+    stuck = [m for m in games if not m["movable"]]
+    out = [{"severity": "high",
+            "text": f"{shut['venue_name']} is closed today and {shut['affected']} matches are booked on "
+                    "it. None of the clubs know yet.",
+            "evidence": {"venue": shut["venue"], "affected": shut["affected"]}},
+           {"severity": "info",
+            "text": "Pitches that are open and have a slot: "
+                    + (", ".join(f"{v} ({n})" for v, n in shut["elsewhere"].items()) or "none")
+                    + f". That is {shut['open_slots']} slots for {shut['affected']} matches.",
+            "evidence": {"elsewhere": shut["elsewhere"]}}]
+    for m in movable:
+        if m["needs_official"]:
+            out.append({"severity": "info",
+                        "text": f"{m['home_name']} v {m['away_name']} has {m['was_official_name']} down to "
+                                f"referee, who is not available. {m['official_name']} is on the spare list "
+                                "and can take it.",
+                        "evidence": {"fixture": m["fixture"], "official": m["official"]}})
+    if movable:
+        out.append({"severity": "info",
+                    "text": f"{len(movable)} of the {shut['affected']} can be moved to another pitch and "
+                            "both clubs told.",
+                    "evidence": {"movable": [m["fixture"] for m in movable]}})
+    for m in stuck:
+        out.append({"severity": "high",
+                    "text": f"{m['home_name']} v {m['away_name']} ({m['time']}, {m['grade']}) cannot be "
+                            f"sorted automatically: {m['why_not']}. Rook will leave it alone and hand it to "
+                            "the league secretary, because a match nobody can be told about is worse than a "
+                            "match everyone knows is off.",
+                    "evidence": {"fixture": m["fixture"], "why_not": m["why_not"]}})
+    return out
+
+
+class Fixtures:
+    key = "fixtures"
+    name = "Fixture cannot go ahead"
+    trigger = "A pitch closed with matches booked on it"
+    contain_type, contain_label = "move_fixture", "First match moved after"
+
+    def find_subject(self, sb):
+        return fixtures_subject(sb)
+
+    def investigate(self, sb, subject):
+        return investigate_fixtures(sb, subject)
+
+    def title(self, info, subject):
+        return f"{info['venue_name']} is closed: {info['affected']} matches to move today"
+
+    def discovery(self, rel):
+        shut = rel[0]
+        return (f"today's fixtures at {shut['venue_name']}, free slots at the other pitches, the officials "
+                "on the list and each club's contact",
+                [m["fixture"] for m in rel if m["rel"] == "fixture"],
+                {"affected": shut["affected"], "open_slots": shut["open_slots"],
+                 "stuck": sum(1 for m in rel if m["rel"] == "fixture" and not m["movable"])})
+
+    def plan(self, rel, iid):
+        acts, shut = [], rel[0]
+
+        def add(t, target, deps=(), summary="", risk="low", **p):
+            a = make_action(iid, len(acts) + 1, t, target, p, deps, summary, risk)
+            acts.append(a)
+            return a
+        for m in (r for r in rel if r["rel"] == "fixture"):
+            if not m["movable"]:
+                continue
+            teams = [m["home"], m["away"]]
+            mv = add("move_fixture", m["fixture"], service="league", teams=teams,
+                     from_venue=shut["venue"], to_venue=m["to_venue"], to_time=m["to_time"],
+                     summary=f"Move {m['home_name']} v {m['away_name']} from {m['time']} at "
+                             f"{shut['venue_name']} to {m['new_time']} at {m['to_venue_name']}.")
+            deps = [mv.id]
+            if m["needs_official"]:
+                off = add("assign_official", m["fixture"], [mv.id], service="league", teams=teams,
+                          official=m["official"],
+                          summary=f"Put {m['official_name']} on {m['home_name']} v {m['away_name']}, because "
+                                  f"{m['was_official_name']} is not available today.")
+                deps.append(off.id)
+            add("tell_teams", m["fixture"], deps, service="league", teams=teams, risk="medium",
+                summary=f"Tell {m['home_name']} and {m['away_name']} that their match is now {m['new_time']} "
+                        f"at {m['to_venue_name']}, with {m['official_name']} refereeing.")
+        return acts
+
+    def conditions(self, rel):
+        return fixtures_conditions(rel)
+
+    def closed_summary(self, n):
+        return (f"Finished with proof: all {n} steps were checked independently. Every match that could be "
+                "moved is on a pitch that is open, with an official who is available, and both clubs have "
+                "answered. Nothing is left on the closed pitch, and no two matches share a pitch and a "
+                "kick-off time.")
+
+    def declines(self, inc, acts):
+        out = []
+        for m in inc.relationships:
+            if m["rel"] != "fixture" or m["movable"]:
+                continue
+            out.append({"what": f"Move {m['home_name']} v {m['away_name']} ({m['time']})",
+                        "why": f"{sentence(m['why_not'])}. Moving a match that one of the clubs will not "
+                               "hear about means a team travelling to a pitch with nobody on it, so Rook "
+                               "leaves it for the league secretary.",
+                        "rule": "R9-truthful-record"})
+        return out
+
+    def follow_ups(self, inc, acts):
+        stuck = [m for m in inc.relationships if m["rel"] == "fixture" and not m["movable"]]
+        out = [f"The league secretary needs to call {m['home_name']} and {m['away_name']} about the "
+               f"{m['time']} {m['grade']} match: {m['why_not']}." for m in stuck]
+        if stuck:
+            out.append(f"{len(stuck)} match(es) are still down for a pitch that is shut. Until someone sorts "
+                       "those, the morning is not actually covered.")
+        return out
+
+    def impact(self, sb, inc):
+        return []
+
+
+PLAYBOOKS = {p.key: p for p in (Offboarding(), Outage(), LeakedSecret(), CareFollowUp(), ClinicCover(),
+                                Fixtures())}
 
 
 def playbook_for(scenario=None, key=None):

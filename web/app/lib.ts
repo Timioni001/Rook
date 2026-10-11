@@ -86,6 +86,9 @@ export const ACTION_LABEL: Record<string, string> = {
   resend_prescription: 'Send the prescription to the pharmacy again',
   close_loop: 'Mark the loop closed in the record',
   move_appointment: 'Move the appointment to a doctor who is in',
+  move_fixture: 'Move the match to a pitch that is open',
+  assign_official: 'Put an available official on the match',
+  tell_teams: 'Tell both clubs',
 }
 
 // What each playbook is for, in the buyer's words.
@@ -95,6 +98,7 @@ export const PLAYBOOK_COPY: Record<string, { button: string; pitch: string }> = 
   offboarding: { button: 'Investigate offboarding', pitch: 'Someone left, but their accounts and API keys live on.' },
   outage: { button: 'Investigate the alert', pitch: 'A production service started failing right after a change.' },
   leak: { button: 'Investigate scanner finding', pitch: 'A scanner found a live API key hardcoded in a repository.' },
+  fixtures: { button: 'Sort the fixtures', pitch: 'A pitch is shut with three matches on it. Six clubs do not know yet.' },
 }
 
 

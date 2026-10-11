@@ -11,6 +11,8 @@ ROOK_PRINCIPAL = "svc-rook"
 
 CARE_ACTIONS = {"resend_referral", "book_appointment", "contact_patient", "notify_clinician",
                 "close_loop", "resend_prescription", "move_appointment"}
+# The same three verbs, for a club's fixture list rather than a clinic's appointment book.
+LEAGUE_ACTIONS = {"move_fixture", "assign_official", "tell_teams"}
 
 ALLOWED = {
     "disable_account": {"github", "cloud", "pm"},
@@ -28,11 +30,14 @@ ALLOWED = {
     "close_loop": {"records"},
     "resend_prescription": {"pharmacy"},
     "move_appointment": {"schedule"},
+    "move_fixture": {"league"},
+    "assign_official": {"league"},
+    "tell_teams": {"league"},
 }
 KNOWN_GOOD_MINUTES = 60      # a revision must have run healthy this long to be rolled back to unattended
 # Revoking a key is irreversible. Contacting a patient reaches a person outside the building and
 # cannot be taken back either, so both wait for someone accountable.
-NEEDS_APPROVAL = {"revoke_credential", "contact_patient"}
+NEEDS_APPROVAL = {"revoke_credential", "contact_patient", "tell_teams"}
 
 
 def _care_record(sb, target):
@@ -56,6 +61,9 @@ def owner_of(sb, a):
             # Scoped to the clinic this incident is about. R10 then pins each action to the patient
             # named on its own record, so one person's care can never be changed under another's.
             return sb.records.scope() if _care_record(sb, a.target) else None
+        if a.type in LEAGUE_ACTIONS:
+            # Scoped to the club. R11 then pins each action to the teams on its own fixture.
+            return sb.league.scope() if sb.league.fixture(a.target) else None
     except KeyError:
         return None
 
@@ -134,10 +142,32 @@ def decide(a, inc, sb, plan, approval=None):
                 return ("blocked", "Marking this closed would be false: " + ", ".join(missing) + ".",
                         "R9-truthful-record")
 
+    if a.type in LEAGUE_ACTIONS:
+        x = sb.league.fixture(a.target)
+        if x is None:
+            return "blocked", "That fixture does not exist.", "R3-dependency"
+        named = set(a.params.get("teams") or [])
+        if named and named != {x["home"], x["away"]}:
+            return ("blocked", "This action names teams that are not the two playing this fixture.",
+                    "R11-fixture-match")
+        if a.type == "assign_official" and not sb.league.official_available(a.params.get("official", "")):
+            return ("blocked", "That official is not available, so Rook will not put them on a fixture.",
+                    "R3-dependency")
+        if a.type == "tell_teams" and sb.league.venues()[x["venue"]]["status"] != "open":
+            # A kick-off time two clubs can act on is only true once the fixture is somewhere it can
+            # be played. Checked again here, immediately before the message would go out.
+            pending = [y for y in plan if y.target == a.target and y.type == "move_fixture"
+                       and y.status.value not in ("blocked", "failed", "verified")]
+            if not pending:
+                return ("blocked", "The fixture is still at a pitch that is closed, so there is no new "
+                        "kick-off time to tell anyone about.", "R4-safe-order")
+
     if a.type in NEEDS_APPROVAL:
         if approval is None:
             why = ("Contacting a patient reaches a real person and cannot be taken back, so someone "
                    "accountable has to confirm it." if a.type == "contact_patient" else
+                   "Telling two clubs a new kick-off time reaches people outside the club and cannot be "
+                   "taken back, so someone accountable has to confirm it." if a.type == "tell_teams" else
                    "Revoking a key cannot be undone, so a person with approver rights must confirm it.")
             return "needs_approval", why, "R5-approval"
         if "approver" not in approval.get("roles", []) or approval.get("org") != inc.org:

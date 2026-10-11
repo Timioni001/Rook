@@ -11,6 +11,12 @@ const KIND_LABEL: Record<string, string> = {
   identity: 'Person', account: 'Account', credential: 'API key', dependent: 'Service', repo: 'Code',
   alert: 'Alert', caller: 'Caller', service: 'Service', pipeline: 'Pipeline', revision: 'Deploy', host: 'Database',
 }
+// The three columns mean different things in different places, so the words follow the playbook
+// rather than the shape: the same box is a patient's appointment in a clinic and a match at a club.
+const KIND_BY_PLAYBOOK: Record<string, Record<string, string>> = {
+  cover: { identity: 'Doctor', credential: 'Appointment', dependent: 'Covering doctor' },
+  fixtures: { identity: 'Pitch', credential: 'Match', dependent: 'Moved to' },
+}
 
 function tone(n: Node, live: Record<string, string>) {
   const s = live[n.id] || n.status
@@ -21,7 +27,10 @@ function tone(n: Node, live: Record<string, string>) {
 }
 
 /** Relationship graph as discovered, with current state layered on from verified actions. */
-export default function Graph({ graph, live }: { graph: { nodes: Node[]; edges: Edge[] }; live: Record<string, string> }) {
+export default function Graph({ graph, live, playbook }: {
+  graph: { nodes: Node[]; edges: Edge[] }; live: Record<string, string>; playbook?: string
+}) {
+  const kind = (k: string) => (playbook && KIND_BY_PLAYBOOK[playbook]?.[k]) || KIND_LABEL[k] || k
   const nodes = graph?.nodes || []
   if (!nodes.length) return <p className="muted">No relationships discovered.</p>
   const cols: Node[][] = [[], [], []]
@@ -36,6 +45,8 @@ export default function Graph({ graph, live }: { graph: { nodes: Node[]; edges: 
     c.forEach((n, j) => { pos[n.id] = { x: x[i], y: off + j * (BH + GAP) + GAP / 2 } })
   })
   return (
+    <>
+    <p className="graph-hint small muted">Scroll the map sideways to see the rest of it.</p>
     <div className="graph-wrap">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby="graph-title graph-desc" style={{ minWidth: 620 }}>
         <title id="graph-title">Relationship graph</title>
@@ -68,12 +79,13 @@ export default function Graph({ graph, live }: { graph: { nodes: Node[]; edges: 
           return (
             <g key={n.id} transform={`translate(${p.x},${p.y})`}>
               <rect width={BW} height={BH} rx="8" className={`node node-${t}`} />
-              <text x="10" y="18" className="node-kind">{KIND_LABEL[n.kind] || n.kind} · {status}</text>
+              <text x="10" y="18" className="node-kind">{kind(n.kind)} · {status}</text>
               <text x="10" y="35" className="node-label">{n.label.length > 30 ? n.label.slice(0, 29) + '…' : n.label}</text>
             </g>
           )
         })}
       </svg>
     </div>
+    </>
   )
 }
