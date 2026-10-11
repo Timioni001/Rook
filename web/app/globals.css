@@ -147,6 +147,7 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .status-card.tone-ok { background: var(--lime) } .status-card.tone-bad { background: var(--bad-bg) }
 .status-card.tone-warn { background: var(--warn-bg) } .status-card.tone-info { background: var(--info-bg) }
 
+.more { margin-top: 12px }
 /* the run, told as six lines */
 .story { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none }
 .story li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start;

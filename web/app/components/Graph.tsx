@@ -14,7 +14,7 @@ const KIND_LABEL: Record<string, string> = {
 // The three columns mean different things in different places, so the words follow the playbook
 // rather than the shape: the same box is a patient's appointment in a clinic and a match at a club.
 const KIND_BY_PLAYBOOK: Record<string, Record<string, string>> = {
-  cover: { identity: 'Doctor', credential: 'Appointment', dependent: 'Covering doctor' },
+  cover: { identity: 'Doctor', credential: 'Appointment', dependent: 'Covering' },
   care: { identity: 'Patient', credential: 'Handoff', dependent: 'Who it had to reach' },
   fixtures: { identity: 'Pitch', credential: 'Match', dependent: 'Moved to' },
 }
@@ -72,15 +72,38 @@ export default function Graph({ graph, live, playbook, ran }: {
   if (!nodes.length) return <p className="muted">No relationships discovered.</p>
   const cols: Node[][] = [[], [], []]
   nodes.forEach((n) => cols[COLS[n.kind] ?? 1].push(n))
+  // A day with twelve appointments draws a map taller than the screen and tells you nothing the
+  // seventh box did not. Past six, the rest collapse into one box that says how they ended.
+  const foldedInto: Record<string, string> = {}
+  const folded = cols.map((col) => {
+    if (col.length <= 7) return col
+    const rest = col.slice(6)
+    rest.forEach((n) => { foldedInto[n.id] = '__more__' })
+    const tones = rest.map((n) => tone(n, live))
+    const bad = tones.filter((t) => t === 'bad').length
+    const ok = tones.filter((t) => t === 'ok').length
+    const status = bad ? `${bad} left alone` : ok === rest.length ? 'same as above' : 'not finished yet'
+    return [...col.slice(0, 6), {
+      id: '__more__', kind: col[0].kind, label: `and ${rest.length} more`, status,
+      detail: rest.map((n) => n.label).join(', '),
+    } as Node]
+  })
   const BW = 252, BH = 70, GAP = 18, W = 3 * BW + 2 * 92 + 24
   const x = [12, BW + 104, 2 * BW + 196]
-  const rows = Math.max(...cols.map((c) => c.length))
+  const rows = Math.max(...folded.map((c) => c.length))
   const H = rows * (BH + GAP) + 12
   const pos: Record<string, { x: number; y: number }> = {}
-  cols.forEach((c, i) => {
+  folded.forEach((c, i) => {
     const off = (H - c.length * (BH + GAP)) / 2
     c.forEach((n, j) => { pos[n.id] = { x: x[i], y: off + j * (BH + GAP) + GAP / 2 } })
   })
+  const drawn = folded.flat()
+  // Edges to a folded node are redrawn to the box that now stands for it, and de-duplicated, so
+  // the summary box is connected like the ones it replaced rather than floating on its own.
+  const edges = Object.values(Object.fromEntries((graph.edges || []).map((e) => {
+    const from = foldedInto[e.from] || e.from, to = foldedInto[e.to] || e.to
+    return [`${from}>${to}>${e.rel}`, { ...e, from, to }]
+  })))
   const changed = Object.keys(live).length
   return (
     <>
@@ -103,7 +126,7 @@ export default function Graph({ graph, live, playbook, ran }: {
               <path d="M0,0 L10,5 L0,10 z" fill="var(--ink)" />
             </marker>
           </defs>
-          {graph.edges.map((e, i) => {
+          {edges.map((e, i) => {
             const a = pos[e.from], b = pos[e.to]
             if (!a || !b) return null
             const [l, r] = a.x < b.x ? [a, b] : [b, a]
@@ -119,7 +142,7 @@ export default function Graph({ graph, live, playbook, ran }: {
               </g>
             )
           })}
-          {nodes.map((n) => {
+          {drawn.map((n) => {
             const p = pos[n.id]
             const t = tone(n, live)
             const status = live[n.id] || n.status

@@ -121,7 +121,7 @@ function liveState(actions: any[], graph: any): Record<string, string> {
     if (a.type === 'resume_pipeline' && ok) m[`pipeline:${a.target}`] = 'resumed, rev blocked'
     // a doctor off sick: the appointment is the node
     if (a.type === 'move_appointment') m[a.target] = ok ? 'moved · a doctor who is in' : bad ? 'move failed' : m[a.target]
-    if (a.type === 'contact_patient' && ok) m[a.target] = 'moved · the patient replied'
+    if (a.type === 'contact_patient' && ok) m[a.target] = 'moved · patient told'
     // a fixture that cannot go ahead: the match is the node
     if (a.type === 'move_fixture') m[a.target] = ok ? 'moved to an open pitch' : bad ? 'move failed' : m[a.target]
     if (a.type === 'assign_official' && ok) m[a.target] = 'moved · a referee who is free'
@@ -536,34 +536,7 @@ export default function Page() {
             <section className="section" id="plan">
               <SectionTitle label="Plan" text="Steps run in this order. Each one is checked against live state before the next can start." />
               <PlanFlow actions={R.actions} />
-              <ol className="plan">
-                {R.actions.map((a: any, i: number) => {
-                  const s = actionState(a)
-                  const dark = a.risk === 'high'
-                  return (
-                    <li key={a.id} className={`step ${dark ? 'step-dark' : ''}`}>
-                      <div className="step-head">
-                        <span className="num mono">{String(i + 1).padStart(2, '0')}</span>
-                        <h3 className="h4"><mark>{ACTION_LABEL[a.type] || a.type}</mark></h3>
-                        <Pill tone={s.tone}>{s.label}</Pill>
-                        {a.risk === 'high' && <Pill tone="bad">irreversible</Pill>}
-                        {a.risk === 'medium' && <Pill tone="warn">production change</Pill>}
-                      </div>
-                      <p className="mono small target">{a.target}</p>
-                      <p>{a.summary}</p>
-                      <p className="small dim">
-                        Policy {a.policy.rule}: {a.policy.reason}
-                        {a.depends_on.length > 0 && <> · after step {a.depends_on.map((x: string) => R.actions.findIndex((y: any) => y.id === x) + 1).join(', ')}</>}
-                        {a.retries > 0 && <> · {a.retries} failed attempt{a.retries > 1 ? 's' : ''}</>}
-                      </p>
-                      {a.result?.error && <p className="small err-text">{a.result.error}</p>}
-                      {(Object.keys(a.evidence || {}).length > 0) && (
-                        <details><summary><Arrow /> Verification evidence</summary><pre>{JSON.stringify(a.evidence, null, 2)}</pre></details>
-                      )}
-                    </li>
-                  )
-                })}
-              </ol>
+              <PlanSteps actions={R.actions} />
             </section>
 
             <Recovery R={R} audit={d.audit} checkpoints={d.checkpoints} names={stepNames} />
@@ -571,23 +544,7 @@ export default function Page() {
             {/* Verification */}
             <section className="section" id="verify">
               <SectionTitle label="Verification" text="Fixed before any change was made, and measured by probing live state, never by trusting a tool’s reply." />
-              <div className="card table-card">
-                <table>
-                  <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Evidence</th></tr></thead>
-                  <tbody>
-                    {R.conditions.map((c: any) => {
-                      const r = c.result === true ? ['ok', 'Pass'] : c.result === false ? ['bad', 'Fail'] : ['warn', c.evaluated_at ? 'Inconclusive' : 'Not checked yet']
-                      return (
-                        <tr key={c.id}>
-                          <td>{c.description}<div className="small muted">{c.expected}</div></td>
-                          <td><Pill tone={r[0]}>{r[1]}</Pill></td>
-                          <td><code className="small">{Object.entries(c.evidence || {}).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(' · ') || '—'}</code></td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <ChecksTable conditions={R.conditions} />
             </section>
 
             {/* Timeline */}
@@ -996,6 +953,92 @@ function RunStory({ R, audit }: { R: any; audit: any[] }) {
       </ol>
     </section>
   )
+}
+
+/**
+ * Long lists are shortened to what a reader needs: anything that failed or is waiting, plus the
+ * first few that went fine. Twelve near-identical rows of "Pass" teach nobody anything, and a
+ * screen of them buries the one row that did not.
+ */
+function useShortList<T>(items: T[], keep: number, important: (x: T) => boolean) {
+  const [all, setAll] = useState(false)
+  const notable = items.filter(important)
+  const rest = items.filter((x) => !important(x))
+  const shown = all ? items : [...notable, ...rest.slice(0, Math.max(keep - notable.length, 2))]
+  const hidden = items.length - shown.length
+  return { shown: all ? items : items.filter((x) => shown.includes(x)), hidden, all, setAll }
+}
+
+function MoreRows({ hidden, all, setAll, noun }: {
+  hidden: number; all: boolean; setAll: (v: boolean) => void; noun: string
+}) {
+  if (hidden <= 0 && !all) return null
+  return (
+    <button className="btn-outline more" onClick={() => setAll(!all)}>
+      {all ? `Show fewer` : `Show the other ${hidden} ${noun}`}
+    </button>
+  )
+}
+
+function PlanSteps({ actions }: { actions: any[] }) {
+  // anything that is not simply "verified" stays on screen: those are the rows worth reading
+  const { shown, hidden, all, setAll } = useShortList(actions, 6, (a: any) => a.status !== 'verified')
+  return (<>
+    <ol className="plan">
+      {shown.map((a: any) => {
+        const i = actions.indexOf(a)
+        const s = actionState(a)
+        return (
+          <li key={a.id} className={`step ${a.risk === 'high' ? 'step-dark' : ''}`}>
+            <div className="step-head">
+              <span className="num mono">{String(i + 1).padStart(2, '0')}</span>
+              <h3 className="h4"><mark>{ACTION_LABEL[a.type] || a.type}</mark></h3>
+              <Pill tone={s.tone}>{s.label}</Pill>
+              {a.risk === 'high' && <Pill tone="bad">irreversible</Pill>}
+              {a.risk === 'medium' && <Pill tone="warn">production change</Pill>}
+            </div>
+            <p className="mono small target">{a.target}</p>
+            <p>{a.summary}</p>
+            <p className="small dim">
+              Policy {a.policy.rule}: {a.policy.reason}
+              {a.depends_on.length > 0 && <> · after step {a.depends_on.map((x: string) => actions.findIndex((y: any) => y.id === x) + 1).join(', ')}</>}
+              {a.retries > 0 && <> · {a.retries} failed attempt{a.retries > 1 ? 's' : ''}</>}
+            </p>
+            {a.result?.error && <p className="small err-text">{a.result.error}</p>}
+            {(Object.keys(a.evidence || {}).length > 0) && (
+              <details><summary><Arrow /> What was checked afterwards</summary><pre>{JSON.stringify(a.evidence, null, 2)}</pre></details>
+            )}
+          </li>
+        )
+      })}
+    </ol>
+    <MoreRows hidden={hidden} all={all} setAll={setAll} noun="steps, all verified" />
+  </>)
+}
+
+function ChecksTable({ conditions }: { conditions: any[] }) {
+  const { shown, hidden, all, setAll } = useShortList(conditions, 6, (c: any) => c.result !== true)
+  return (<>
+    <div className="card table-card">
+      <table>
+        <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">What was observed</th></tr></thead>
+        <tbody>
+          {shown.map((c: any) => {
+            const r = c.result === true ? ['ok', 'Pass'] : c.result === false ? ['bad', 'Fail']
+              : ['warn', c.evaluated_at ? 'Inconclusive' : 'Not checked yet']
+            return (
+              <tr key={c.id}>
+                <td>{c.description}<div className="small muted">{c.expected}</div></td>
+                <td><Pill tone={r[0]}>{r[1]}</Pill></td>
+                <td><code className="small">{Object.entries(c.evidence || {}).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(' · ') || '—'}</code></td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+    <MoreRows hidden={hidden} all={all} setAll={setAll} noun="checks, all passing" />
+  </>)
 }
 
 function SectionTitle({ label, text }: { label: string; text: string }) {
