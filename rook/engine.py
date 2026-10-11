@@ -768,5 +768,5 @@ def summarize(inc, acts, status, bad, pb, conds=()):
         named = [words.get(b, b) for b in bad]
         return ("Escalated to a person: Rook could not finish safely and will not claim it did. "
                 + ("; ".join(probs) + ". " if probs else "")
-                + (f"Still not true: {'; '.join(named)}." if named else ""))
+                + (f"Checks that did not pass: {'; '.join(named)}." if named else ""))
     return f"{done} of {len(acts)} actions verified so far."

@@ -56,6 +56,20 @@ differs: the trigger, what to read, the plan and the closure checks.
 Numbers measured by running each playbook, not typed in: `python3 scripts/make-readme-charts.py`
 redraws both charts from a live run.
 
+## After a run, in six lines
+
+<img src="docs/images/run-story.png" alt="The What just happened panel: it started with, Rook read every connected system, before touching anything it wrote the checks, then it worked the plan, it checked its own work, and it stopped rather than claim success" width="880">
+
+Trace tools in this space show a tree of spans and leave you to assemble the account yourself.
+This is the account, with the tree underneath it. Every number in it comes from the same report
+the panels below are built from, so the story and the evidence cannot disagree.
+
+<img src="docs/images/map.png" alt="The map after a run: the closed pitch in red, two matches moved and both clubs told in green, one match left alone in red, and the pitches they moved to" width="880">
+
+The map is the same one Rook drew while investigating, with what changed written on it: green is
+done and checked, red is the problem or something deliberately left alone, grey is untouched. Every
+status on it is read back from the system it lives on.
+
 ## The refusals are the product
 
 <img src="docs/images/scenario-outcomes.svg" alt="How all 40 scenarios end, by industry: 16 close with every check passing, 24 stop on purpose with a stated reason" width="880">
@@ -81,6 +95,14 @@ synthetic order, the appointment book, the pharmacy's queue, the specialist clin
 fixture list. A tool replying "ok" counts for nothing on its own. The evidence pack
 (`/api/incidents/{id}/evidence`) carries the plan, the approvals, every check with its observed
 evidence, what Rook refused to do, the follow-ups, and a hash-chained audit log.
+
+## Nothing is called done on a tool's say-so
+
+<img src="docs/images/timeline.png" alt="The timeline: Priya (manager) approved step 2, tell both clubs; running step 2; tool reported success, now checking independently; verified step 2 on live state" width="880">
+
+The audit log is append-only and hash-chained, and it names steps and people the way the plan does.
+Note the pair that repeats all the way down: *the tool reported success* and then *verified on live
+state*. The second one is the only one that counts.
 
 ## The plan, as the engine holds it
 
