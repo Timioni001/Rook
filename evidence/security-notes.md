@@ -31,6 +31,15 @@ Keywarden is a sandbox: all five adapters are in-process mocks holding synthetic
 - Trace attributes are redacted the same way. Keys matching `secret|token|password|authorization|api_key|value` are dropped before export (`test_secret_values_never_reach_trace_attributes`).
 - The neatlogs API key is read from the environment and never logged or committed.
 
+## The waitlist, the one piece of real personal data
+
+- `POST /api/waitlist` is public on purpose: nobody has an account before launch. Everything else about it is closed down.
+- One required field (email, validated and lower-cased), and five optional ones. Name, organisation and the free-text answer go through the same plain-text check as everything else a caller can type; sector and size are enums. Unknown fields are refused, as everywhere.
+- Rate limited to five sign-ups per ten minutes per address.
+- The email is the primary key, so signing up twice updates one row rather than growing the table.
+- **There is no route that reads the list back.** It is write-only over HTTP, and `test_the_waitlist_is_write_only_and_deduplicated` asserts that.
+- It is never written to the audit log or to a trace.
+
 ## Known limitations
 
 - Demo tokens are built in for local runs. Disable them with `KEYWARDEN_DEMO_TOKENS=0` and set `KEYWARDEN_TOKENS`.

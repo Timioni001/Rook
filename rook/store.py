@@ -21,6 +21,10 @@ class Store:
         self._x("CREATE TABLE IF NOT EXISTS tool_calls(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, action_id TEXT, attempt INTEGER, outcome TEXT, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS approvals(n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, incident_id TEXT, action_id TEXT, decision TEXT, principal TEXT, data TEXT)")
         self._x("CREATE TABLE IF NOT EXISTS runs(incident_id TEXT PRIMARY KEY, owner TEXT, expires REAL)")
+        # The one table holding anything about a real person: an email somebody typed in to be told
+        # when Rook is ready. Nothing is read back out over the API, and the email is the primary key
+        # so signing up twice does not make a second row.
+        self._x("CREATE TABLE IF NOT EXISTS waitlist(email TEXT PRIMARY KEY, ts REAL, data TEXT)")
         if "hash" not in [r[1] for r in self._x("PRAGMA table_info(audit)")]:
             self._x("ALTER TABLE audit ADD COLUMN hash TEXT")
         self._x("CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'audit is append-only'); END")
@@ -132,6 +136,17 @@ class Store:
     def approvals(self, iid):
         return [{"n": r[0], "ts": r[1], "action": r[2], "decision": r[3], "by": r[4], "data": json.loads(r[5])}
                 for r in self._x("SELECT n,ts,action_id,decision,principal,data FROM approvals WHERE incident_id=? ORDER BY n", (iid,))]
+
+    def join_waitlist(self, email, data):
+        """Keep one row per address. A second sign-up updates it rather than piling up."""
+        with self.lock:
+            self.c.execute("INSERT INTO waitlist(email, ts, data) VALUES(?,?,?) "
+                           "ON CONFLICT(email) DO UPDATE SET ts=excluded.ts, data=excluded.data",
+                           (email, time.time(), json.dumps(data)))
+            self.c.commit()
+
+    def waitlist_size(self):
+        return self._x("SELECT COUNT(*) FROM waitlist")[0][0]
 
     # run lease: at most one executor per incident, across threads and processes
     def acquire_run(self, iid, owner, ttl=300):

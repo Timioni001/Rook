@@ -7,8 +7,9 @@ proposes a fix, waits for a person to approve anything that reaches someone outs
 organisation, then checks the result against those systems and shows the proof. Anything it could
 not finish stays open, named, with the reason.
 
-**[Open the live dashboard →](https://rook-keywarden.pages.dev)** · six playbooks across four
-industries · 40 scenarios · 218 tests
+**[rook-keywarden.pages.dev](https://rook-keywarden.pages.dev)** — the front page, with the
+waitlist. **[Open the demo →](https://rook-keywarden.pages.dev/app/)** — no sign-up, straight into a
+real incident. Six playbooks across four industries · 40 scenarios · 221 tests
 
 <img src="docs/images/dashboard-top.png" alt="The Rook dashboard: pick an industry, then the kind of problem, or describe your own organisation" width="880">
 
@@ -150,13 +151,13 @@ python -m rook.demo --scenario signature
 
 # 2. API + dashboard
 uvicorn rook.api:create_app --factory --port 8000
-cd web && npm ci && npm run dev          # http://localhost:3000
+cd web && npm ci && npm run dev          # front page http://localhost:3000, demo at /app/
 
 # 3. One container
 docker build -t rook . && docker run --rm -p 8000:8000 rook
 
 # 4. Tests
-python -m pytest -q                      # 218 tests
+python -m pytest -q                      # 221 tests
 ```
 
 <details>
@@ -176,7 +177,16 @@ and waits for it rather than showing an error.
 </details>
 
 <details>
-<summary><b>Signing in</b></summary>
+<summary><b>The two pages, and signing in</b></summary>
+
+`/` is the front page: what Rook is, who it is for, and a waitlist. `/app/` is the demo, which
+needs no account. Opening the demo asks **who do you want to be** before anything else, because
+what you are allowed to do here depends on the answer and a dropdown in the corner does not say so.
+
+The waitlist is the one place this service holds anything about a real person. One required field,
+everything else optional and bounded, rate limited per address, stored once per email, and there is
+no route that reads it back out.
+
 
 Sign-in is coming soon. For now the dashboard has four demo identities in the top-right menu, and
 whoever you pick decides what you may do: staff can start an incident, only a manager can approve a

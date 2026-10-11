@@ -167,3 +167,35 @@ def test_evidence_pack_download(client):
     assert "Status: **closed_verified**" in body
     assert "approved by Priya (manager) (account u-priya" in body
     assert "Hash chain over" in body and "intact" in body and "sk_test_SYNTH" not in body
+
+
+# ---------------------------------------------------------------- the waitlist
+
+def test_waitlist_takes_one_email_and_bounds_the_rest(client):
+    r = client.post("/api/waitlist", json={"email": "Ada@Example.com ", "name": "Ada Okafor",
+                                           "organisation": "Riverside Family Practice",
+                                           "sector": "Clinic or practice", "size": "11–50",
+                                           "use_for": "Cover for absences"})
+    assert r.status_code == 201 and r.json() == {"ok": True}
+    for bad in ({"email": "not-an-address"}, {"email": "a@b"}, {"email": ""},
+                {"email": "a@b.com", "sector": "Something I made up"},
+                {"email": "a@b.com", "size": "a few"},
+                {"email": "a@b.com", "name": "<script>x</script>"},
+                {"email": "a@b.com", "use_for": "x" * 301},
+                {"email": "a@b.com", "unexpected": True},
+                {}):
+        assert client.post("/api/waitlist", json=bad).status_code == 422, bad
+
+
+def test_the_waitlist_is_write_only_and_deduplicated(client, tmp_path):
+    """Nothing reads it back over HTTP, and signing up twice does not make two rows."""
+    for _ in range(2):
+        assert client.post("/api/waitlist", json={"email": "same@example.com"}).status_code == 201
+    assert client.app.state.store.waitlist_size() == 1
+    for path in ("/api/waitlist", "/api/waitlist/list", "/api/waitlist/same@example.com"):
+        assert client.get(path, headers=h(APPROVER)).status_code in (404, 405)
+
+
+def test_waitlist_sign_ups_are_rate_limited(client):
+    codes = [client.post("/api/waitlist", json={"email": f"a{i}@example.com"}).status_code for i in range(7)]
+    assert codes.count(201) == 5 and codes[-1] == 429

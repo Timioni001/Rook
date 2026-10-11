@@ -1,11 +1,17 @@
-export type Identity = { key: string; token: string; label: string }
+export type Identity = { key: string; token: string; label: string; who: string; role: string; can: string }
 
 // Local demo identities issued by the backend when ROOK_DEMO_TOKENS=1 (the default for local runs).
+// `can` is what that sign-in may actually do, which the agent enforces on every request: it is the
+// first thing a visitor is asked to choose, because the permission model is most of the point.
 export const IDENTITIES: Identity[] = [
-  { key: 'analyst', token: 'demo-analyst-token', label: 'Sam · staff' },
-  { key: 'approver', token: 'demo-approver-token', label: 'Priya · manager (approves)' },
-  { key: 'viewer', token: 'demo-viewer-token', label: 'Lee · read only' },
-  { key: 'other', token: 'demo-other-org-token', label: 'Eve · a different company' },
+  { key: 'analyst', token: 'demo-analyst-token', label: 'Sam · staff', who: 'Sam Okafor', role: 'Staff',
+    can: 'Report a problem and run the fix. Cannot approve anything that reaches a person outside.' },
+  { key: 'approver', token: 'demo-approver-token', label: 'Priya · manager (approves)', who: 'Priya Shah',
+    role: 'Manager', can: 'Everything Sam can do, and approves the steps that reach someone outside.' },
+  { key: 'viewer', token: 'demo-viewer-token', label: 'Lee · read only', who: 'Lee Marsh', role: 'Read only',
+    can: 'Watch an incident and read the evidence. Cannot start or approve anything.' },
+  { key: 'other', token: 'demo-other-org-token', label: 'Eve · a different company', who: 'Eve Dubois',
+    role: 'Another company', can: 'Sees what an outsider sees, which is nothing: incidents here return 404 to her.' },
 ]
 
 export class ApiError extends Error {

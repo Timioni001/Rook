@@ -91,6 +91,40 @@ class Setup(BaseModel):
         return v if v is None else [plain(x)[:60] for x in v]
 
 
+SECTORS = ("Clinic or practice", "IT & security", "Engineering", "Sport & clubs", "Something else")
+SIZES = ("1–10", "11–50", "51–200", "201–1000", "1000+")
+EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s.]+(\.[^@\s.]+)+$")
+
+
+class WaitlistEntry(BaseModel):
+    """Somebody asking to be told when Rook is ready.
+
+    One required field, everything else optional and bounded, nothing free-form that is not plain
+    text. This is the only place the service holds anything about a real person, so it holds as
+    little as it can and never hands it back out.
+    """
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(max_length=254)
+    name: Optional[str] = Field(default=None, max_length=60)
+    organisation: Optional[str] = Field(default=None, max_length=60)
+    sector: Optional[Literal[SECTORS]] = None
+    size: Optional[Literal[SIZES]] = None
+    use_for: Optional[str] = Field(default=None, max_length=300)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v):
+        v = v.strip()
+        if not EMAIL.match(v):
+            raise ValueError("that does not look like an email address")
+        return v.lower()
+
+    @field_validator("name", "organisation", "use_for")
+    @classmethod
+    def _plain_optional(cls, v):
+        return v if v is None else plain(v)
+
+
 class CreateIncident(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario: ScenarioName = "signature"
@@ -336,6 +370,19 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
         if not store.run_active(iid):
             start_run(iid)
         return {"action": a.id, "status": a.status.value}
+
+    @app.post("/api/waitlist", status_code=201)
+    def waitlist(entry: WaitlistEntry, request: Request):
+        """Public on purpose: nobody has an account yet. Bounded, rate limited by address, and
+        write-only -- there is no route that reads the list back."""
+        ip = (request.client.host if request.client else "anon")
+        now = time.time()
+        window = [t for t in hits.get(f"wl:{ip}", []) if now - t < 600]
+        if len(window) >= 5:
+            raise HTTPException(429, "too many sign-ups from here; try again shortly")
+        hits[f"wl:{ip}"] = window + [now]
+        store.join_waitlist(entry.email, entry.model_dump(exclude_none=True, exclude={"email"}))
+        return {"ok": True}
 
     # Single-container deploys: serve the statically exported dashboard from the same origin.
     static = pathlib.Path(env("STATIC", pathlib.Path(__file__).parent.parent / "web" / "out"))

@@ -99,7 +99,7 @@ def main():
         return 1
     ok(f"(woke in {secs}s)" if secs > 2 else "")
 
-    step("dashboard served")
+    step("front page served")
     status, body = call(base, "/")
     if status != 200:
         fail(f"GET / returned {status}")
@@ -108,6 +108,18 @@ def main():
     if b"/_next/" not in html:
         fail("the page served here was not built from this repository (no Next.js assets). "
              "Check the address, and that the deployment uploaded web/out.")
+        return 1
+    if b"waitlist" not in html:
+        fail("that is not the current front page: no waitlist on it. The deployment is probably "
+             "serving an older build.")
+        return 1
+    ok()
+
+    step("demo served at /app/")
+    status, body = call(base, "/app/")
+    demo = body if isinstance(body, bytes) else str(body).encode()
+    if status != 200 or b"/_next/" not in demo:
+        fail(f"GET /app/ returned {status}. The demo should live there now.")
         return 1
     ok()
 
