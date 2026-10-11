@@ -44,12 +44,7 @@ export default function Landing() {
             made-up data, so nothing real is touched and no real person is contacted.</p>
         </header>
 
-        <section className="section land-shot">
-          <img src="/run-story.png" width={1556} height={1340}
-            alt="Rook's What just happened panel: it started with a closed pitch and three matches, it read every connected system, it wrote the closure checks before touching anything, it worked the plan, it checked its own work, and it stopped rather than claim success" />
-          <p className="small muted">Every run ends with this: the whole thing in six lines, and the evidence
-            for each one underneath.</p>
-        </section>
+        <WorkedExample />
 
         <section className="section">
           <h2 className="h2 land-h">How it works</h2>
@@ -90,6 +85,15 @@ export default function Landing() {
           </div>
         </section>
 
+        <section className="section land-shot">
+          <h2 className="h2 land-h">And it shows its working</h2>
+          <p className="small muted land-shot-note">Every run ends with a plain account of what happened, and
+            the evidence for each line of it underneath: the plan, every check with what was observed on the
+            live system, what it refused to do, and a tamper-evident log. This is a real one.</p>
+          <img src="/run-story.png" width={1556} height={1340}
+            alt="Rook's What just happened panel: what it started with, what it read, the checks it wrote before touching anything, the plan it worked, what it verified, and how it ended" />
+        </section>
+
         <Waitlist />
 
         <footer className="footer mono small land-foot">
@@ -98,6 +102,52 @@ export default function Landing() {
         </footer>
       </div>
     </div>
+  )
+}
+
+/**
+ * One real morning, in three panels.
+ *
+ * The numbers are a measured run of the `cover_unreachable` scenario, not a story: twelve booked,
+ * eleven moved and told, one left alone on purpose, 23 of 24 checks passing. A judge should be able
+ * to read this in ten seconds and know exactly what the thing is for.
+ */
+function WorkedExample() {
+  const panels: [string, string, React.ReactNode][] = [
+    ['08:02', 'What comes in', <>
+      A doctor calls in sick. <b>Twelve patients</b> are booked in with her today, the first at nine.
+      None of them know. Somebody at the front desk is about to lose the morning to the phone.
+    </>],
+    ['08:03', 'What Rook does', <>
+      It reads the appointment book, the patient records and the messaging system. <b>Eleven</b> can be
+      moved to a colleague at a similar time, and each person is told by text. The twelfth cannot: the
+      only number on file for her is dead.
+    </>],
+    ['08:05', 'What you are left with', <>
+      Eleven moved and confirmed, checked against the systems themselves. The twelfth is <b>not quietly
+      moved</b> — her appointment stays where it is, and reception gets her name, her time and the reason.
+    </>],
+  ]
+  return (
+    <section className="section">
+      <h2 className="h2 land-h">A Monday morning, start to finish</h2>
+      <div className="strip3">
+        {panels.map(([time, head, body]) => (
+          <div key={head} className="card strip3-card">
+            <span className="mono small strip3-time">{time}</span>
+            <b>{head}</b>
+            <p className="small">{body}</p>
+          </div>
+        ))}
+      </div>
+      <p className="strip mono strip3-facts" role="note">
+        <span>22 steps</span><span>23 of 24 checks passed</span><span>1 refused, with the reason</span>
+        <span>nothing marked done that was not</span>
+      </p>
+      <p className="small muted">The same engine does the same thing for a pitch shut on a Saturday, an API
+        key that outlived the person who made it, or a service failing after a deploy.{' '}
+        <a href="/app/">Open the demo and run this one yourself</a>.</p>
+    </section>
   )
 }
 

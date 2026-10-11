@@ -380,3 +380,13 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .who-card b { font-size: 17px }
 .who-card .mono { opacity: .6 }
 @media (max-width: 680px) { .sheet-grid { grid-template-columns: 1fr } .sheet { border-radius: 20px 20px 0 0 } }
+
+/* the worked example: one morning, three panels */
+.strip3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px }
+.strip3-card { display: grid; gap: 6px; align-content: start }
+.strip3-card b { font-size: 18px }
+.strip3-card p { font-size: 15.5px; line-height: 1.55 }
+.strip3-time { background: var(--lime); border-radius: 999px; padding: 2px 10px; justify-self: start }
+.strip3-facts { margin-top: 16px }
+.land-shot-note { max-width: 46rem; margin-bottom: 14px }
+@media (max-width: 880px) { .strip3 { grid-template-columns: 1fr } }
