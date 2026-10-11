@@ -18,3 +18,4 @@ web/.wrangler/
 .pytest_cache/
 .claude/
 .entire/
+docs/video/
