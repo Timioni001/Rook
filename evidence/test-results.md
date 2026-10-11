@@ -1,111 +1,89 @@
-# Test results
+# Test results and the audit behind them
 
-Generated from real runs in the build environment on 2026-10-10 (UTC). Re-run with the commands below.
+Three layers, all run on 2026-10-11 against this commit: the unit and integration suite, every
+HTTP route exercised through the real Cloudflare Workers proxy, and every playbook driven in a
+real browser. Each section says how to reproduce it.
 
-## Backend: `python -m pytest -v`
+## 1. The suite: 218 passed
 
-Result: **58 passed** at the time of the raw output below. The current branch has **95**: 2 neatlogs feature tests, an evidence-pack API test, 6 tests for rollback, repo cleanup, ownerless accounts, a tampered audit log and incident metrics, 11 service-outage tests in `tests/test_outage.py`, 8 leaked-credential tests in `tests/test_leak.py` (including the two cases where Rook refuses to act), and 7 in `tests/test_evidence.py` for refusals, impact metrics and the control mapping. They pass on Python 3.13. The one warning comes from Starlette's test client.
+```
+python -m pytest -q
+218 passed, 1 warning in 8.6s        # Python 3.13; the warning is Starlette's test client
+```
 
-### Required scenarios → tests
-
-| # | Scenario | Test(s) |
+| File | Tests | What it covers |
 |---|---|---|
-| 1 | Successful end-to-end resolution | `test_end_to_end_resolution_with_evidence`, `test_full_flow_over_http` |
-| 2 | Transient failure, then recovery | `test_transient_failure_recovers_after_reconciliation` |
-| 3 | Restart from a saved checkpoint | `test_restart_from_checkpoint` |
-| 4 | Duplicate execution / idempotency | `test_duplicate_execution_is_idempotent`, `test_concurrent_runs_are_refused`, `test_double_run_and_closed_incident_conflicts` |
-| 5 | Unauthorized action denied | `test_unauthorized_action_denied`, `test_approval_requires_approver_role_and_same_org`, `test_roles_enforced` |
-| 6 | Tampered request identity rejected | `test_identity_fields_in_body_rejected[*]`, `test_created_by_comes_from_token` |
-| 7 | Ambiguous outcome reconciled before retry | `test_ambiguous_outcome_reconciled[ambiguous_applied/ambiguous_lost]` |
-| 8 | Persistent failure escalated safely | `test_persistent_failure_escalates`, `test_permanent_failure_escalates` |
-| 9 | Multiple dependents in a safe order | `test_dependents_updated_before_revocation`, `test_revocation_without_dependent_steps_is_blocked`, `test_new_dependent_appearing_before_revocation_blocks_it` |
-| 10 | Failed regression prevents closure | `test_failed_regression_prevents_closure` |
-| 11 | Old credential still valid blocks closure | `test_old_credential_still_valid_blocks_closure`, `test_success_response_without_state_change_fails[*]` |
-| 12 | Audit report matches actions | `test_audit_report_matches_actions` |
-| 13 | Secrets absent from traces and logs | `test_secrets_absent_everywhere`, `test_secret_values_never_reach_trace_attributes`, `test_no_secrets_in_api_responses` |
-| 14 | API authorization on every sensitive route | `test_every_route_requires_authentication[*]` (10 routes), `test_other_org_cannot_see_or_touch_incident[*]` (7 routes) |
+| `tests/test_all_scenarios.py` | 82 | Every one of the 40 scenarios, end to end, against the rules that must never bend |
+| `tests/test_api.py` | 33 | Auth on every route, org scoping, roles, rate limits, body limits, error shapes |
+| `tests/test_scenarios.py` | 31 | The engine itself: ordering, idempotency, checkpoints, crash and resume, audit chain |
+| `tests/test_setup.py` | 14 | A caller describing their own organisation, and the bounds on what they may say |
+| `tests/test_outage.py` | 11 | Service outage: cause attribution, pause-before-rollback, wrong-cause escalation |
+| `tests/test_care.py` | 10 | Care follow-up: handoffs that never happened, urgent results, unreachable patients |
+| `tests/test_fixtures.py` | 10 | Fixtures: moves, officials, telling both clubs, and the two refusals |
+| `tests/test_leak.py` | 8 | Leaked credential, including the two cases where Rook refuses to act |
+| `tests/test_cover.py` | 7 | Doctor off sick, including not moving anyone who cannot be told |
+| `tests/test_evidence.py` | 7 | Evidence pack: refusals, impact metrics, control mapping |
+| `tests/test_tracing.py` | 5 | neatlogs spans: kinds, attributes, redaction |
 
-### Raw output
+`test_all_scenarios.py` is the one that scales. For each scenario it asserts that the closure
+checks were written down before anything was changed, that the audit chain is intact, that
+**closed** means every mandatory check passed with nothing unresolved, and that **not closed**
+means a stated reason and something for a person to act on. A new scenario is covered the moment
+it is added.
 
-```
-tests/test_api.py::test_full_flow_over_http PASSED                       [  1%]
-tests/test_api.py::test_every_route_requires_authentication[get-/api/me] PASSED [  3%]
-tests/test_api.py::test_every_route_requires_authentication[get-/api/scenarios] PASSED [  5%]
-tests/test_api.py::test_every_route_requires_authentication[get-/api/incidents] PASSED [  6%]
-tests/test_api.py::test_every_route_requires_authentication[post-/api/incidents] PASSED [  8%]
-tests/test_api.py::test_every_route_requires_authentication[get-/api/incidents/{iid}] PASSED [ 10%]
-tests/test_api.py::test_every_route_requires_authentication[get-/api/incidents/{iid}/events] PASSED [ 12%]
-tests/test_api.py::test_every_route_requires_authentication[post-/api/incidents/{iid}/run] PASSED [ 13%]
-tests/test_api.py::test_every_route_requires_authentication[post-/api/incidents/{iid}/cancel] PASSED [ 15%]
-tests/test_api.py::test_every_route_requires_authentication[post-/api/incidents/{iid}/actions/{aid}/approve] PASSED [ 17%]
-tests/test_api.py::test_every_route_requires_authentication[post-/api/incidents/{iid}/actions/{aid}/reject] PASSED [ 18%]
-tests/test_api.py::test_other_org_cannot_see_or_touch_incident[get-/api/incidents/{iid}] PASSED [ 20%]
-tests/test_api.py::test_other_org_cannot_see_or_touch_incident[get-/api/incidents/{iid}/events] PASSED [ 22%]
-tests/test_api.py::test_other_org_cannot_see_or_touch_incident[post-/api/incidents/{iid}/run] PASSED [ 24%]
-tests/test_api.py::test_other_org_cannot_see_or_touch_incident[post-/api/incidents/{iid}/cancel] PASSED [ 25%]
-tests/test_api.py::test_other_org_cannot_see_or_touch_incident[post-/api/incidents/{iid}/actions/{aid}/approve] PASSED [ 27%]
-tests/test_api.py::test_other_org_cannot_see_or_touch_incident[post-/api/incidents/{iid}/actions/{aid}/reject] PASSED [ 29%]
-tests/test_api.py::test_other_org_incident_list_is_empty PASSED          [ 31%]
-tests/test_api.py::test_roles_enforced PASSED                            [ 32%]
-tests/test_api.py::test_identity_fields_in_body_rejected[owner] PASSED   [ 34%]
-tests/test_api.py::test_identity_fields_in_body_rejected[org] PASSED     [ 36%]
-tests/test_api.py::test_identity_fields_in_body_rejected[created_by] PASSED [ 37%]
-tests/test_api.py::test_identity_fields_in_body_rejected[approver] PASSED [ 39%]
-tests/test_api.py::test_identity_fields_in_body_rejected[principal] PASSED [ 41%]
-tests/test_api.py::test_created_by_comes_from_token PASSED               [ 43%]
-tests/test_api.py::test_validation_and_limits PASSED                     [ 44%]
-tests/test_api.py::test_rate_limit PASSED                                [ 46%]
-tests/test_api.py::test_errors_do_not_leak_internals PASSED              [ 48%]
-tests/test_api.py::test_double_run_and_closed_incident_conflicts PASSED  [ 50%]
-tests/test_api.py::test_no_secrets_in_api_responses PASSED               [ 51%]
-tests/test_scenarios.py::test_end_to_end_resolution_with_evidence PASSED [ 53%]
-tests/test_scenarios.py::test_transient_failure_recovers_after_reconciliation PASSED [ 55%]
-tests/test_scenarios.py::test_restart_from_checkpoint PASSED             [ 56%]
-tests/test_scenarios.py::test_duplicate_execution_is_idempotent PASSED   [ 58%]
-tests/test_scenarios.py::test_concurrent_runs_are_refused PASSED         [ 60%]
-tests/test_scenarios.py::test_unauthorized_action_denied PASSED          [ 62%]
-tests/test_scenarios.py::test_approval_requires_approver_role_and_same_org PASSED [ 63%]
-tests/test_scenarios.py::test_rejected_revocation_escalates PASSED       [ 65%]
-tests/test_scenarios.py::test_ambiguous_outcome_reconciled[ambiguous_applied-False] PASSED [ 67%]
-tests/test_scenarios.py::test_ambiguous_outcome_reconciled[ambiguous_lost-True] PASSED [ 68%]
-tests/test_scenarios.py::test_persistent_failure_escalates PASSED        [ 70%]
-tests/test_scenarios.py::test_permanent_failure_escalates PASSED         [ 72%]
-tests/test_scenarios.py::test_dependents_updated_before_revocation PASSED [ 74%]
-tests/test_scenarios.py::test_revocation_without_dependent_steps_is_blocked PASSED [ 75%]
-tests/test_scenarios.py::test_new_dependent_appearing_before_revocation_blocks_it PASSED [ 77%]
-tests/test_scenarios.py::test_failed_regression_prevents_closure PASSED  [ 79%]
-tests/test_scenarios.py::test_old_credential_still_valid_blocks_closure PASSED [ 81%]
-tests/test_scenarios.py::test_success_response_without_state_change_fails[replacement_invalid-issue_replacement] PASSED [ 82%]
-tests/test_scenarios.py::test_success_response_without_state_change_fails[faulty_update-update_dependent] PASSED [ 84%]
-tests/test_scenarios.py::test_inconclusive_observation_rejects_closure PASSED [ 86%]
-tests/test_scenarios.py::test_missing_conditions_reject_closure PASSED   [ 87%]
-tests/test_scenarios.py::test_audit_report_matches_actions PASSED        [ 89%]
-tests/test_scenarios.py::test_secrets_absent_everywhere PASSED           [ 91%]
-tests/test_scenarios.py::test_invalid_state_transition_rejected PASSED   [ 93%]
-tests/test_scenarios.py::test_cancellation_stops_before_mutation PASSED  [ 94%]
-tests/test_tracing.py::test_workflow_spans_exported_through_neatlogs PASSED [ 96%]
-tests/test_tracing.py::test_secret_values_never_reach_trace_attributes PASSED [ 98%]
-tests/test_tracing.py::test_span_records_errors PASSED                   [100%]
-======================== 58 passed, 1 warning in 6.15s =========================
+## 2. Every HTTP surface, through the real proxy
+
+Run against `wrangler pages dev` serving the built dashboard and forwarding `/api/*` to the agent,
+so the Workers runtime and the Pages Function are in the path, not just FastAPI.
+
+**29 of 29 checks passed.**
+
+| Area | Checks |
+|---|---|
+| Authentication | `/api/health` is public; no token, bad token → 401 on everything else |
+| Roles | viewer cannot create or run (403); analyst cannot approve (403); approver can |
+| Org scoping | another company's token gets **404**, not 403, on the incident and its evidence |
+| Input | unknown scenario → 422; unknown field → 422; body over 8 KB → 413; bad ids → 404 |
+| Path handling | `/api/incidents/..%2F..%2Fetc/passwd` → 404 |
+| Lifecycle | create → run (202) → pause for approval → approve → closed with every check passing |
+| Artefacts | evidence pack downloads and names the organisation; events feed; `/api/docs` served |
+| Re-entry | running a closed incident again → 409 |
+
+## 3. Every playbook, in a real browser
+
+Chromium against the same stack, clicking the dashboard as a person would: pick the industry, pick
+the problem, start, run, approve each pause, read the verdict.
+
+| Playbook | Incident it produced | Outcome |
+|---|---|---|
+| Doctor off sick | Dr Ada Okafor is off sick: 12 appointments to move today | Closed · verified |
+| Care follow-up | 3 of 4 things marked done in the record never actually happened | Closed · verified |
+| Access & offboarding | Active credential after offboarding: Jordan Doe | Closed · verified |
+| Leaked credential | Leaked credential in a repository: Reporting warehouse key | Closed · verified |
+| Service outage | checkout-api outage: failing after a deploy | Closed · verified |
+| Fixture cannot go ahead | East Park pitch 1 is closed: 3 matches to move today | Closed · verified |
+
+No console errors or page errors in any run.
+
+**Mobile.** The same pages at 390 px, measuring every element against the viewport rather than
+eyeballing it: page width stayed 390 px with no horizontal scroll, and a sports fixture ran to
+Closed · verified on the phone viewport. The one element wider than a phone is the relationship
+map, which scrolls sideways and says so.
+
+Screenshots of these runs are in [../docs/images/](../docs/images/).
+
+## 4. Reproducing it
+
+```bash
+python -m pytest -q                                    # layer 1
+bash scripts/build-pages.sh                            # build what Cloudflare serves
+uvicorn rook.api:create_app --factory --port 8000 &    # the agent
+npx wrangler@4 pages dev out --port 8788 \
+  --binding ROOK_API_ORIGIN=http://127.0.0.1:8000      # the proxy, locally
+python3 scripts/check-live.py http://localhost:8788    # layer 2, end to end, prints PASS
+python3 scripts/make-readme-charts.py                  # redraws the README charts from live runs
 ```
 
-## Frontend
-
-```
-$ cd web && npx tsc --noEmit
-(no output: no type errors)
-$ npx next build
- ✓ Compiled successfully
-Route (app)        Size     First Load JS
-┌ ○ /              ~7.5 kB  ~95 kB
-```
-
-## Browser run
-
-A Playwright script drove the real dashboard against the real API. It created a `signature` incident, ran it, waited for the approval pause, switched to the approver identity, approved, and waited for `Closed · verified`. The screenshots are in [screenshots/](screenshots/). At 390 px the page width stayed 390 px, so there was no horizontal scroll.
-
-## Single-container check
-
-`STATIC_EXPORT=1 npx next build` produced `web/out`. Uvicorn served it at `/` (200, title "Keywarden · Rook"), with `/api/health` 200, an unknown `/api/*` 404 and an unauthenticated `/api/me` 401. The same Playwright flow ran end to end against that single origin.
-
-`docker build` itself couldn't be completed in the build environment because both Docker Hub and ECR Public returned 429 (rate limited). The image hasn't been built yet, so the first build will happen on the deploy machine.
+`scripts/check-live.py` also runs against the deployed site and is the one command to trust before
+judging: it wakes the agent, loads the dashboard, runs a real incident through to Verified Closure
+and exits non-zero if anything fails.

@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="470" viewBox="0 0 880 470" role="img" aria-label="How Rook works: a problem comes in, Rook investigates across the connected systems, writes the closure checks before changing anything, plans, asks a person for anything that reaches outside, executes, verifies against the systems, and closes only if every check passed.">
+  <rect width="880" height="470" rx="16" fill="#fbfaf7" stroke="#d9d6cd" stroke-width="2"/>
+  <text x="28" y="40" font-family="'Space Grotesk','DejaVu Sans',system-ui,sans-serif" font-size="19" font-weight="700" fill="#101010">One loop, whatever the industry</text>
+  <text x="28" y="62" font-family="'Space Grotesk','DejaVu Sans',system-ui,sans-serif" font-size="13" fill="#5c5a54">The closure checks are written before anything is changed, and closing needs every one of them to pass on the live systems.</text>
+
+  <!-- the systems a company already runs -->
+  <rect x="28" y="92" width="190" height="300" rx="12" fill="#ffffff" stroke="#101010" stroke-width="2"/>
+  <text x="44" y="118" font-family="'Space Mono',ui-monospace,monospace" font-size="11" fill="#5c5a54">SYSTEMS YOU ALREADY RUN</text>
+  <g font-family="'Space Grotesk','DejaVu Sans',system-ui,sans-serif" font-size="13" fill="#101010">
+    <text x="44" y="146">Appointment book</text>
+    <text x="44" y="172">Patient records</text>
+    <text x="44" y="198">Pharmacy</text>
+    <text x="44" y="224">Fixture list</text>
+    <text x="44" y="250">Identity directory</text>
+    <text x="44" y="276">Cloud &amp; deployments</text>
+    <text x="44" y="302">Secret vault</text>
+    <text x="44" y="328">Code host</text>
+    <text x="44" y="354">Messaging</text>
+  </g>
+  <text x="44" y="376" font-family="'Space Mono',ui-monospace,monospace" font-size="11" fill="#5c5a54">read, written and re-read</text>
+
+  <!-- the loop -->
+  <g font-family="'Space Grotesk','DejaVu Sans',system-ui,sans-serif">
+    <rect x="262" y="92" width="258" height="50" rx="10" fill="#101010"/>
+    <text x="278" y="114" font-size="14" font-weight="700" fill="#fbfaf7">1 &#183; A problem is reported</text>
+    <text x="278" y="132" font-size="12" fill="#c8f24c">by a person, or by a system</text>
+
+    <rect x="262" y="156" width="258" height="50" rx="10" fill="#ffffff" stroke="#101010" stroke-width="2"/>
+    <text x="278" y="178" font-size="14" font-weight="700" fill="#101010">2 &#183; Investigate</text>
+    <text x="278" y="196" font-size="12" fill="#5c5a54">every system it touches; nothing changes</text>
+
+    <rect x="262" y="220" width="258" height="50" rx="10" fill="#ffffff" stroke="#1d7a2e" stroke-width="3"/>
+    <text x="278" y="242" font-size="14" font-weight="700" fill="#101010">3 &#183; Write the closure checks</text>
+    <text x="278" y="260" font-size="12" fill="#1d7a2e">what must be true before this is done</text>
+
+    <rect x="262" y="284" width="258" height="50" rx="10" fill="#ffffff" stroke="#101010" stroke-width="2"/>
+    <text x="278" y="306" font-size="14" font-weight="700" fill="#101010">4 &#183; Plan, in a safe order</text>
+    <text x="278" y="324" font-size="12" fill="#5c5a54">deterministic: no model decides the order</text>
+
+    <rect x="262" y="348" width="258" height="50" rx="10" fill="#ffffff" stroke="#1f4fbf" stroke-width="3"/>
+    <text x="278" y="370" font-size="14" font-weight="700" fill="#101010">5 &#183; Policy, then a person</text>
+    <text x="278" y="388" font-size="12" fill="#1f4fbf">anything reaching someone outside waits</text>
+
+    <rect x="562" y="156" width="290" height="50" rx="10" fill="#ffffff" stroke="#101010" stroke-width="2"/>
+    <text x="578" y="178" font-size="14" font-weight="700" fill="#101010">6 &#183; Execute one step</text>
+    <text x="578" y="196" font-size="12" fill="#5c5a54">idempotent, with a checkpoint</text>
+
+    <rect x="562" y="220" width="290" height="50" rx="10" fill="#ffffff" stroke="#101010" stroke-width="2"/>
+    <text x="578" y="242" font-size="14" font-weight="700" fill="#101010">7 &#183; Verify it on the system itself</text>
+    <text x="578" y="260" font-size="12" fill="#5c5a54">the tool saying "ok" is not evidence</text>
+
+    <rect x="562" y="284" width="290" height="50" rx="10" fill="#1d7a2e"/>
+    <text x="578" y="306" font-size="14" font-weight="700" fill="#ffffff">8 &#183; Close, if every check passed</text>
+    <text x="578" y="324" font-size="12" fill="#ffffff" opacity="0.85">with an evidence pack anyone can download</text>
+
+    <rect x="562" y="348" width="290" height="50" rx="10" fill="#ffffff" stroke="#b42318" stroke-width="3"/>
+    <text x="578" y="370" font-size="14" font-weight="700" fill="#101010">8b &#183; Otherwise, escalate</text>
+    <text x="578" y="388" font-size="12" fill="#b42318">named, with what a person has to do next</text>
+  </g>
+
+  <!-- flow -->
+  <g stroke="#101010" stroke-width="2" fill="none">
+    <path d="M391 142 L391 152" marker-end="url(#a)"/>
+    <path d="M391 206 L391 216" marker-end="url(#a)"/>
+    <path d="M391 270 L391 280" marker-end="url(#a)"/>
+    <path d="M391 334 L391 344" marker-end="url(#a)"/>
+    <path d="M520 373 L534 373 L534 181 L558 181" marker-end="url(#a)"/>
+    <path d="M707 206 L707 216" marker-end="url(#a)"/>
+    <path d="M707 270 L707 280" marker-end="url(#a)"/>
+    <path d="M218 181 L258 181" marker-end="url(#a)"/>
+    <path d="M258 245 L222 245" marker-end="url(#a)"/>
+    <path d="M700 270 L700 282 L866 282 L866 170 L852 170" marker-end="url(#a)" stroke-dasharray="5 4"/>
+  </g>
+  <text x="300" y="448" font-family="'Space Mono',ui-monospace,monospace" font-size="11" fill="#5c5a54">a step that fails is reconciled against real state, then retried or rolled back</text>
+  
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#101010"/>
+    </marker>
+  </defs>
+</svg>
