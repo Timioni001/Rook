@@ -69,6 +69,12 @@ SCENARIOS = {
     "cover_unreachable": ("One patient's phone number is out of date, so Rook will not move her appointment "
                           "without telling her", {},
                           {"doctor_off": "clin-okafor", "patient_unreachable": "pat-05"}),
+    "cover_half": ("Colleagues can take half the list, so the other half stays with reception", {},
+                   {"doctor_off": "clin-okafor", "slots_short": 6}),
+    "cover_nobody_reachable": ("Nobody on the list can be contacted, so Rook moves none of them", {},
+                               {"doctor_off": "clin-okafor", "unreachable_count": 12}),
+    "referral_all_good": ("Everything the record says is done really is done, so there is nothing to fix", {},
+                          {"care_all_done": True}),
 }
 SCENARIO_PLAYBOOK = {k: "outage" for k in SCENARIOS if k.startswith("outage")}
 SCENARIO_PLAYBOOK |= {k: "leak" for k in SCENARIOS if k.startswith("leak")}
@@ -92,10 +98,11 @@ _PEOPLE = [
 ]
 
 
-def _clinic_day():
-    """Twelve people booked in with one doctor, and two colleagues with room to take them."""
+def _clinic_day(n=None):
+    """People booked in with one doctor, and two colleagues with room to take them."""
+    n = len(_PEOPLE) if n is None else max(1, min(n, len(_PEOPLE)))
     patients, appts = {}, {}
-    for i, (name, at, reason) in enumerate(_PEOPLE, start=1):
+    for i, (name, at, reason) in enumerate(_PEOPLE[:n], start=1):
         pid = f"pat-{i:02d}"
         patients[pid] = {"name": name, "born": "",
                          "channels": [{"kind": "text message", "value": f"mobile ending {1000 + i * 7}",
@@ -110,8 +117,8 @@ def _clinic_day():
     return patients, appts, free
 
 
-def seed() -> dict:
-    _day_patients, _day_appts, _day_free = _clinic_day()
+def seed(patients=None) -> dict:
+    _day_patients, _day_appts, _day_free = _clinic_day(patients)
     return {
         "directory": {   # identity provider, read via the internal app
             "ident-jdoe": {"name": "Jordan Doe", "type": "contractor", "employer": "Northwind Consulting",
@@ -250,6 +257,23 @@ def seed() -> dict:
     }
 
 
+# The first write each playbook makes, so "one step fails" means the same thing everywhere.
+FLAKY_POINTS = ("schedule.move", "booking.book", "records.resend", "pharmacy.send",
+                "app.update_config", "cloud.rollback", "vault.issue")
+
+
+def _setup_flags(setup):
+    """Turn a caller's description of a situation into the flags the seed already understands."""
+    out = {}
+    if setup.get("cover_slots") is not None:
+        out["slots_short"] = max(0, int(setup["cover_slots"]))
+    if setup.get("people_we_cannot_reach"):
+        out["unreachable_count"] = max(0, int(setup["people_we_cannot_reach"]))
+    if setup.get("one_result_is_urgent"):
+        out["referral_critical"] = True
+    return out
+
+
 def _apply_seed_flags(s):
     """Flags that describe the world Rook walks into, rather than a fault injected while it works."""
     if s["flags"].get("leak_already_revoked"):
@@ -259,15 +283,35 @@ def _apply_seed_flags(s):
     if off:
         s["schedule"]["off_today"] = [off]
         s["schedule"]["doctors"][off]["available"] = False
-    if s["flags"].get("slots_short"):
+    if s["flags"].get("slots_short") is not None:
         keep = s["flags"]["slots_short"]
         pool = [(d, t) for d, ts in s["schedule"]["free_slots"].items() for t in ts][:keep]
         s["schedule"]["free_slots"] = {d: [] for d in s["schedule"]["free_slots"]}
         for d, t in pool:
             s["schedule"]["free_slots"][d].append(t)
+    n_unreachable = s["flags"].get("unreachable_count")
+    if n_unreachable:
+        # Take them off the front of today's list, so the gap is visible early in the day.
+        for pid in sorted(p for p in s["records"]["patients"] if p.startswith("pat-") and p[4:].isdigit())[:n_unreachable]:
+            for c in s["records"]["patients"][pid]["channels"]:
+                c["status"] = "stale"
     if s["flags"].get("patient_unreachable"):
         for c in s["records"]["patients"][s["flags"]["patient_unreachable"]]["channels"]:
             c["status"] = "stale"
+    if s["flags"].get("care_all_done"):
+        # The honest opposite of the usual case: every handoff really did complete.
+        s["booking"]["inboxes"]["cardiology"]["received"].append("ord-7741")
+        s["booking"]["appointments"]["appt-1"] = {"patient": "pat-alvarez", "specialty": "cardiology",
+                                                  "at": "2026-10-20T11:00:00Z", "status": "booked",
+                                                  "order": "ord-7741"}
+        s["pharmacy"]["received"].append("ord-7743")
+        s["records"]["notifications"].append({"order": "ord-7742", "clinician": "clin-okafor",
+                                              "urgency": "routine", "reason": "Lipid panel"})
+        for pid in ("pat-alvarez", "pat-osei"):
+            s["outreach"]["messages"].append({"patient": pid, "kind": "text message", "value": "on file",
+                                              "delivered": True, "responded": True})
+        for oid in ("ord-7741", "ord-7742", "ord-7743"):
+            s["records"]["orders"][oid]["loop_closed"] = True
     if s["flags"].get("referral_critical"):
         o = s["records"]["orders"]["ord-7742"]
         o["urgency"] = "critical"
@@ -717,11 +761,11 @@ class Outreach(Adapter):
 
 
 class Sandbox:
-    def __init__(self, store, failures=None, flags=None, scenario=None):
+    def __init__(self, store, failures=None, flags=None, scenario=None, setup=None):
         self.store = store
         s = store.load_sandbox()
-        if s is None or scenario is not None:
-            s = self._seeded(failures, flags, scenario)
+        if s is None or scenario is not None or setup:
+            s = self._seeded(failures, flags, scenario, setup)
             store.save_sandbox(s)
         self.s = s
         self.github = SourceHost(self, "github")
@@ -737,8 +781,9 @@ class Sandbox:
         self.schedule = Schedule(self)
 
     @staticmethod
-    def _seeded(failures=None, flags=None, scenario=None):
-        s = seed()
+    def _seeded(failures=None, flags=None, scenario=None, setup=None):
+        setup = dict(setup or {})
+        s = seed(patients=setup.get("people_booked_in"))
         if scenario is not None:
             _, f, fl = SCENARIOS[scenario]
             s["failures"], s["flags"] = copy.deepcopy(f), copy.deepcopy(fl)
@@ -747,14 +792,20 @@ class Sandbox:
             s["failures"] = failures
         if flags is not None:
             s["flags"] = flags
+        if setup:
+            s["setup"] = setup
+            s["flags"] = dict(s["flags"], **_setup_flags(setup))
+            if setup.get("one_step_fails"):
+                # One transient failure on whichever write this playbook makes first.
+                s["failures"] = dict(s["failures"], **{k: ["transient"] for k in FLAKY_POINTS})
         _apply_seed_flags(s)
         return s
 
     def account_service(self, name):
         return {"github": self.github, "cloud": self.cloud, "pm": self.pm_accounts}[name]
 
-    def reset(self, failures=None, flags=None, scenario=None):
-        self.s = self._seeded(failures, flags, scenario)
+    def reset(self, failures=None, flags=None, scenario=None, setup=None):
+        self.s = self._seeded(failures, flags, scenario, setup)
         self._save()
 
     def reload(self):

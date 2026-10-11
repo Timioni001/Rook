@@ -40,9 +40,24 @@ DEMO_TOKENS = {
 ScenarioName = Literal[tuple(SCENARIOS)]
 
 
+class Setup(BaseModel):
+    """A situation described by whoever is using Rook, rather than one of the scripted ones.
+
+    Every field is bounded, so a caller can describe a hard day but cannot ask the sandbox for
+    something it has no data for. Unknown fields are refused outright.
+    """
+    model_config = ConfigDict(extra="forbid")
+    people_booked_in: Optional[int] = Field(default=None, ge=1, le=12)
+    cover_slots: Optional[int] = Field(default=None, ge=0, le=12)
+    people_we_cannot_reach: Optional[int] = Field(default=None, ge=0, le=12)
+    one_result_is_urgent: bool = False
+    one_step_fails: bool = False
+
+
 class CreateIncident(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario: ScenarioName = "signature"
+    setup: Optional[Setup] = None
 
 
 class RejectBody(BaseModel):
@@ -195,9 +210,14 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
         with sandbox_lock:
             if any(store.run_active(i.id) for i in store.incidents()):
                 raise HTTPException(409, "another incident is running in the sandbox; wait for it to finish")
-            sb.reset(scenario=body.scenario)
-            inc = Engine(store, sb).start(org=p.org, created_by=p.id, scenario=body.scenario)
-        return {"id": inc.id, "status": inc.status, "title": inc.title}
+            setup = body.setup.model_dump(exclude_none=True, exclude_defaults=True) if body.setup else None
+            sb.reset(scenario=body.scenario, setup=setup)
+            try:
+                inc = Engine(store, sb).start(org=p.org, created_by=p.id, scenario=body.scenario)
+            except ValueError as e:
+                # e.g. a situation with nothing in it for this playbook to investigate
+                raise HTTPException(422, str(e))
+        return {"id": inc.id, "status": inc.status, "title": inc.title, "setup": setup}
 
     @app.get("/api/incidents/{iid}")
     def get(iid: str, p: Principal = Depends(limited)):

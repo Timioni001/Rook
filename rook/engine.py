@@ -536,7 +536,9 @@ class Engine:
             "conditions_defined_before_remediation": "closure_conditions_defined" in names[:first_exec],
             "no_inconclusive_conditions": bool(stored) and all(c.result is not None for c in mandatory),
             "all_mandatory_conditions_pass": bool(stored) and all(c.result is True for c in mandatory),
-            "all_actions_verified": bool(acts) and all(a.status == S.verified for a in acts),
+            # Finding nothing to do is a real outcome, so an empty plan counts as verified when the
+            # closure checks exist and pass. Without any checks it would be vacuous, so that stays false.
+            "all_actions_verified": all(a.status == S.verified for a in acts) and bool(acts or stored),
             "audit_chain_intact": self.store.verify_chain()[0],
         }
         closed = all(inv.values())

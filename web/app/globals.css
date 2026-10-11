@@ -240,3 +240,17 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
   .day-arrow { display: none }
   .day-new { grid-column: 1 / -1 }
 }
+
+/* ---- describe your own situation ---- */
+.own { margin-top: 14px; border: 1.5px dashed var(--ink); border-radius: 18px; background: var(--paper) }
+.own > summary { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; list-style: none }
+.own > summary::-webkit-details-marker { display: none }
+.own-count { background: var(--lime); border: 1.5px solid var(--ink); border-radius: 999px; padding: 1px 9px; font-size: 12px }
+.own-body { padding: 4px 16px 16px; display: grid; gap: 12px; border-top: 1.5px dashed var(--line) }
+.own-body > p { margin: 12px 0 2px }
+.own-field { display: grid; grid-template-columns: 1fr 92px; gap: 12px; align-items: center }
+.own-field input { border: 1.5px solid var(--ink); border-radius: 10px; padding: 8px 10px; font: inherit;
+                   font-size: 15px; background: var(--paper); width: 100% }
+.own-check { display: flex; gap: 10px; align-items: flex-start }
+.own-check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--ink); flex: 0 0 auto }
+.own-clear { justify-self: start; margin-top: 2px }

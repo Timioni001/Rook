@@ -88,6 +88,14 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 
 Asked about a React Native component library for the visuals. It cannot be used: the dashboard is a Next.js web build, and `expo install`, reanimated, gesture-handler and expo-linear-gradient need a React Native runtime that does not exist here. Rebuilt the same ideas with the design tokens already in the stylesheet and no new dependencies.
 
+**04:05: situations the judge invents, not just the ones we wrote.** Every scenario so far was scripted, which invites the fair question of whether the agent only works on rails.
+
+- The dashboard now has **Or describe your own situation**: how many people are booked in, how many slots colleagues have free, how many cannot be contacted, and whether a step should fail once. The API takes the same object. Rook works the plan, the closure checks and the refusals out from whatever is described.
+- Every field is bounded and unknown fields are refused, so describing a situation can never ask the service for data it does not hold. Tested with zero, negative, enormous, misspelled and wrong-typed input, and against the role and organisation checks.
+- Three more written scenarios: `cover_half`, `cover_nobody_reachable`, and `referral_all_good`, where everything the record claims really did happen.
+- `referral_all_good` exposed a real flaw. An empty plan could never close, because the invariant required at least one action, so an agent that correctly found nothing to do sat at "open" forever. Finding nothing is a real outcome: an empty plan now closes when the closure checks exist and pass, and stays open when there are none to check.
+- 120 tests.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

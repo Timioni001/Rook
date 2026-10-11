@@ -138,7 +138,7 @@ docker build -t rook . && docker run --rm -p 8000:8000 rook   # http://localhost
 ### Tests and checks
 
 ```bash
-python -m pytest -q                      # 112 tests
+python -m pytest -q                      # 120 tests
 cd web && npm ci && npx tsc --noEmit && npm run build:static
 bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 ```
@@ -149,7 +149,20 @@ Access & offboarding: `signature`, `clean`, `ambiguous_applied`, `ambiguous_lost
 Service outage: `outage` (the rollback times out but did land), `outage_clean`, `outage_wrong_cause` (the rollback doesn't fix it), `outage_rollback_down`.
 Leaked credential: `leak` (a config API fails once mid-rotation), `leak_clean`, `leak_already_revoked` (the key is already dead, so Rook refuses to rotate it), `leak_unattributed` (the key matches no credential, so Rook refuses to touch it).
 Care follow-up: `referral_clean`, `referral` (the booking system fails once), `referral_critical` (one result is urgent, so Rook alerts a doctor and touches nothing else), `referral_unreachable` (the patient cannot be contacted, so Rook refuses to mark it done).
-Doctor off sick: `cover_clean` (12 appointments, all moved and everyone told), `cover` (one move fails and is reconciled), `cover_short` (only four slots free, so eight stay open for reception), `cover_unreachable` (one patient has no working number, so Rook leaves her appointment alone).
+Doctor off sick: `cover_clean` (12 appointments, all moved and everyone told), `cover` (one move fails and is reconciled), `cover_short` (only four slots free, so eight stay open for reception), `cover_half`, `cover_unreachable` (one patient has no working number, so Rook leaves her appointment alone), `cover_nobody_reachable` (Rook moves nobody at all).
+`referral_all_good` is the opposite case: everything the record claims really did happen, so Rook closes it with no actions.
+
+### Situations you describe yourself
+
+The scenarios above are written in advance. The dashboard also takes your own numbers, under **Or describe your own situation**, and the API takes them directly:
+
+```bash
+curl -X POST https://<your-service>/api/incidents \
+  -H 'Authorization: Bearer demo-analyst-token' -H 'Content-Type: application/json' \
+  -d '{"scenario":"cover_clean","setup":{"people_booked_in":7,"cover_slots":2,"people_we_cannot_reach":1,"one_step_fails":true}}'
+```
+
+Rook works the plan, the closure checks and the refusals out from whatever you describe. Every field is bounded and unknown fields are refused, so describing a situation cannot ask the service for data it does not have.
 They are listed in `rook/sandbox.py:SCENARIOS`. Failures are injected deterministically per operation.
 
 ## Architecture

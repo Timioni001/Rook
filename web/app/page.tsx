@@ -6,6 +6,19 @@ import {
   reachable, time,
 } from './lib'
 
+// Numbers a person can change to describe a situation nobody wrote in advance. Bounds match the API's.
+const SETUP_NUMBERS: Record<string, { key: string; label: string; min: number; max: number }[]> = {
+  cover: [
+    { key: 'people_booked_in', label: 'People booked in with the doctor who is off', min: 1, max: 12 },
+    { key: 'cover_slots', label: 'Slots colleagues have free today', min: 0, max: 12 },
+    { key: 'people_we_cannot_reach', label: 'People whose number is out of date', min: 0, max: 12 },
+  ],
+}
+const SETUP_TOGGLES: Record<string, { key: string; label: string }[]> = {
+  care: [{ key: 'one_result_is_urgent', label: 'Make one result urgent, so a doctor has to decide' }],
+}
+const ALWAYS_TOGGLE = { key: 'one_step_fails', label: 'Make one step fail once, to watch Rook recover' }
+
 const PLAYBOOK_NAME: Record<string, string> = {
   offboarding: 'Access & offboarding',
   outage: 'Service outage',
@@ -65,9 +78,11 @@ export default function Page() {
   const [playbook, setPlaybook] = useState('cover')
   const pickPlaybook = (k: string) => {
     setPlaybook(k)
+    setSetup({})                       // the knobs belong to the problem type that is showing
     const first = scenarios.find((s) => s.playbook === k)
     if (first) setScenario(first.name)
   }
+  const [setup, setSetup] = useState<Record<string, any>>({})
   const [list, setList] = useState<any[] | null>(null)
   const [id, setId] = useState<string | null>(null)
   const [d, setD] = useState<any>(null)
@@ -151,7 +166,9 @@ export default function Page() {
 
   async function create() {
     await act(async () => {
-      const inc = await api(who.token, '/incidents', { scenario })
+      const body: any = { scenario }
+      if (Object.keys(setup).length) body.setup = setup
+      const inc = await api(who.token, '/incidents', body)
       setId(inc.id)
     })
   }
@@ -214,7 +231,12 @@ export default function Page() {
                 </select>
                 <button className="btn-dark" disabled={busy || !isAnalyst} onClick={create}>{PLAYBOOK_COPY[playbook]?.button}</button>
               </div>
-              <p className="small muted">{scenarios.find((s) => s.name === scenario)?.description}</p>
+              <p className="small muted">
+                {Object.keys(setup).length
+                  ? <><b>Your own situation.</b> {describeSetup(setup)}</>
+                  : scenarios.find((s) => s.name === scenario)?.description}
+              </p>
+              <OwnSituation playbook={playbook} setup={setup} onChange={setSetup} />
               {me && !isAnalyst && <p className="small muted">{who.label} cannot start incidents.</p>}
             </div>
           </div>
@@ -534,6 +556,63 @@ export default function Page() {
   )
 }
 
+const SETUP_WORDS: Record<string, (v: any) => string> = {
+  people_booked_in: (v) => `${v} booked in`,
+  cover_slots: (v) => `${v} slot${v === 1 ? '' : 's'} free`,
+  people_we_cannot_reach: (v) => `${v} we cannot reach`,
+  one_result_is_urgent: () => 'one result urgent',
+  one_step_fails: () => 'one step will fail once',
+}
+
+function describeSetup(setup: Record<string, any>) {
+  const parts = Object.entries(setup).map(([k, v]) => (SETUP_WORDS[k] ? SETUP_WORDS[k](v) : `${k} ${v}`))
+  return parts.join(', ') + '. Rook works the plan and the checks out from that.'
+}
+
+function OwnSituation({ playbook, setup, onChange }: {
+  playbook: string; setup: Record<string, any>; onChange: (s: Record<string, any>) => void
+}) {
+  const numbers = SETUP_NUMBERS[playbook] || []
+  const toggles = [...(SETUP_TOGGLES[playbook] || []), ALWAYS_TOGGLE]
+  const set = (k: string, v: any) => {
+    const next = { ...setup }
+    if (v === '' || v === false || v === null) delete next[k]
+    else next[k] = v
+    onChange(next)
+  }
+  const n = Object.keys(setup).length
+  return (
+    <details className="own">
+      <summary>
+        <b>Or describe your own situation</b>
+        {n > 0 && <span className="own-count mono">{n} set</span>}
+        <span className="howto-chev" aria-hidden="true">+</span>
+      </summary>
+      <div className="own-body">
+        <p className="small muted">The scenarios above are written in advance. These are not: change the numbers
+          and Rook works out the plan, the checks and the limits for whatever you describe.</p>
+        {numbers.map((f) => (
+          <label key={f.key} className="own-field">
+            <span className="small">{f.label}</span>
+            <input type="number" min={f.min} max={f.max} inputMode="numeric"
+              value={setup[f.key] ?? ''} placeholder="default"
+              onChange={(e) => set(f.key, e.target.value === '' ? '' : Math.max(f.min, Math.min(f.max, Number(e.target.value))))} />
+          </label>
+        ))}
+        {toggles.map((t) => (
+          <label key={t.key} className="own-check">
+            <input type="checkbox" checked={!!setup[t.key]} onChange={(e) => set(t.key, e.target.checked)} />
+            <span className="small">{t.label}</span>
+          </label>
+        ))}
+        {n > 0 && (
+          <button className="btn-outline own-clear" onClick={() => onChange({})}>Back to the written scenario</button>
+        )}
+      </div>
+    </details>
+  )
+}
+
 function HowToUse() {
   const steps = [
     ['Pick a problem and press the button', 'Each one is a real situation. Start with “A doctor calls in sick”, scenario “cover clean”.'],
@@ -586,8 +665,8 @@ function Guide({ R, d, me, busy, who, onRun, onApprover, onTry }: any) {
   const isApprover = !!me?.roles.includes('approver'), isAnalyst = !!me?.roles.includes('analyst')
   let step = '', title = '', text = '', action: React.ReactNode = null
   if (!R) {
-    step = 'Start'; title = 'Pick an incident type above and click Investigate.'
-    text = 'Access & offboarding: someone left, but their access lives on. Service outage: a live service broke after a deploy. Both run on fake systems, so nothing real is touched.'
+    step = 'Start'; title = 'Pick a problem above, then press the button.'
+    text = 'Five kinds, from a doctor calling in sick to a key found in a repository. Or open “Or describe your own situation” and set the numbers yourself. Every system behind them is a sandboxed copy, so nothing real is touched.'
     if (me && !isAnalyst) text = `${who.label} can only watch. Switch to Sam in the top-right menu to start an incident.`
   } else if (d?.running) {
     step = 'Working'; title = 'Rook is fixing the incident now.'

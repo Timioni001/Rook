@@ -22,7 +22,7 @@ A web application a company connects to the software it already runs. Staff repo
 - `rook/verification.py`: observers that check the real sandbox state after a fix, plus `CONTROLS`, the indicative SOC 2 / ISO 27001 mapping used by the evidence pack.
 - Refusals: each playbook's `declines(inc, acts)` plus blocked and pending actions, collected in `Engine.report` as `refusals`.
 - `rook/sandbox.py`: synthetic systems (source host, cloud, app and directory, tracker, vault) and the `SCENARIOS`. Synthetic credentials only.
-- `rook/api.py`: FastAPI app (`uvicorn rook.api:create_app --factory`). Demo bearer tokens, hash-chained audit in SQLite.
+- `rook/api.py`: FastAPI app. `Setup` on `POST /api/incidents` takes a caller-described situation; every field is bounded and extras are refused (`uvicorn rook.api:create_app --factory`). Demo bearer tokens, hash-chained audit in SQLite.
 - `rook/obs.py`: neatlogs spans. On when `NEATLOGS_API_KEY` is set.
 - `web/`: Next.js 14 dashboard. `STATIC_EXPORT=1` builds `web/out`, which the API serves. `web/functions/api` is the Cloudflare Pages proxy.
 
@@ -31,7 +31,7 @@ A web application a company connects to the software it already runs. Staff repo
 ```bash
 ./scripts/setup-wsl.sh        # once: Node 22, uv + Python 3.13 venv (neatlogs needs < 3.14), npm ci, cloudflared
 ./scripts/dev.sh              # API :8000 + dashboard http://localhost:3000
-.venv/bin/pytest -q           # 112 tests
+.venv/bin/pytest -q           # 120 tests
 .venv/bin/python -m rook.demo --scenario outage
 ```
 
