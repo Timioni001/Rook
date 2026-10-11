@@ -163,5 +163,7 @@ def test_evidence_pack_download(client):
     r = client.get(f"/api/incidents/{iid}/evidence", headers=h(VIEWER))
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown")
     body = r.text
-    assert "Status: **closed_verified**" in body and "approved by u-priya" in body
+    # the approval reads as a person, with the account it came from beside it
+    assert "Status: **closed_verified**" in body
+    assert "approved by Priya (manager) (account u-priya" in body
     assert "Hash chain over" in body and "intact" in body and "sk_test_SYNTH" not in body

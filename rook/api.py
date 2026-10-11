@@ -28,12 +28,14 @@ INCIDENT_ID = re.compile(r"^inc-[0-9a-f]{8}$")
 ACTION_ID = re.compile(r"^inc-[0-9a-f]{8}-a\d{1,3}$")
 
 # Local demo identities. Replace with ROOK_TOKENS (JSON {token: principal}) anywhere shared.
+# The names match the sign-in menu, and stay out of any one industry's vocabulary: the same four
+# identities stand for a clinic's reception and manager as readily as an IT team's.
 DEMO_TOKENS = {
-    "demo-analyst-token": {"id": "u-sam", "name": "Sam (IT operations)", "org": "acme", "roles": ["analyst"]},
-    "demo-approver-token": {"id": "u-priya", "name": "Priya (IT lead)", "org": "acme",
+    "demo-analyst-token": {"id": "u-sam", "name": "Sam (staff)", "org": "acme", "roles": ["analyst"]},
+    "demo-approver-token": {"id": "u-priya", "name": "Priya (manager)", "org": "acme",
                             "roles": ["analyst", "approver"]},
     "demo-viewer-token": {"id": "u-lee", "name": "Lee (read only)", "org": "acme", "roles": ["viewer"]},
-    "demo-other-org-token": {"id": "u-eve", "name": "Eve (other company)", "org": "globex",
+    "demo-other-org-token": {"id": "u-eve", "name": "Eve (another company)", "org": "globex",
                              "roles": ["analyst", "approver"]},
 }
 

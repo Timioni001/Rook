@@ -89,6 +89,9 @@ function useIdentity() {
   return [IDENTITIES.find((i) => i.key === key) || IDENTITIES[0], choose] as const
 }
 
+// What each verified action changed, in the words the map shows. Keyed by node id, so a box
+// stops saying "can be moved" the moment the move is checked. Every action type a playbook can
+// emit belongs here; a type that is missing leaves its node reading as Rook first found it.
 function liveState(actions: any[], graph: any): Record<string, string> {
   const m: Record<string, string> = {}
   for (const a of actions) {
@@ -116,6 +119,19 @@ function liveState(actions: any[], graph: any): Record<string, string> {
       } else if (bad) m[svc] = 'still failing after rollback'
     }
     if (a.type === 'resume_pipeline' && ok) m[`pipeline:${a.target}`] = 'resumed, rev blocked'
+    // a doctor off sick: the appointment is the node
+    if (a.type === 'move_appointment') m[a.target] = ok ? 'moved · a doctor who is in' : bad ? 'move failed' : m[a.target]
+    if (a.type === 'contact_patient' && ok) m[a.target] = 'moved · the patient replied'
+    // a fixture that cannot go ahead: the match is the node
+    if (a.type === 'move_fixture') m[a.target] = ok ? 'moved to an open pitch' : bad ? 'move failed' : m[a.target]
+    if (a.type === 'assign_official' && ok) m[a.target] = 'moved · a referee who is free'
+    if (a.type === 'tell_teams' && ok) m[a.target] = 'moved · both clubs replied'
+    // care follow-up: the handoff is the node
+    if (a.type === 'resend_referral' && ok) m[a.target] = 'sent on a channel they read'
+    if (a.type === 'book_appointment' && ok) m[a.target] = 'appointment booked'
+    if (a.type === 'resend_prescription' && ok) m[a.target] = 'the pharmacy has it'
+    if (a.type === 'notify_clinician' && ok) m[a.target] = 'the doctor has seen it'
+    if (a.type === 'close_loop' && ok) m[a.target] = 'done · the record agrees'
   }
   return Object.fromEntries(Object.entries(m).filter(([, v]) => v))
 }
@@ -254,6 +270,12 @@ export default function Page() {
   const R = d?.report
   const state = R ? INCIDENT_STATE[R.status] || INCIDENT_STATE.open : null
   const pending = R?.actions.filter((a: any) => a.status === 'needs_approval') || []
+  // Has anything actually been done yet? Several panels read differently before and after.
+  const ranAlready = !!R && (R.actions.some((a: any) => a.status !== 'planned' && a.status !== 'blocked')
+    || ['closed_verified', 'escalated'].includes(R.status))
+  // Timeline rows name steps the way the plan does, instead of printing an action id at a person.
+  const stepNames: Record<string, string> = Object.fromEntries((R?.actions || []).map((a: any, i: number) =>
+    [a.id, `step ${i + 1}, ${(ACTION_LABEL[a.type] || a.type).toLowerCase()}`]))
 
   const isAnalyst = !!me?.roles.includes('analyst')
   const isApprover = !!me?.roles.includes('approver')
@@ -264,10 +286,11 @@ export default function Page() {
         <nav className="nav" aria-label="Main">
           <a className="brand" href="#top"><Star /> Rook</a>
           <div className="nav-links">
+            {R && <a href="#story">What happened</a>}
             <a href="#incident">Incident</a>
             <a href="#plan">Plan</a>
             <a href="#verify">Verification</a>
-            <a href="#refusals">Limits</a>
+            {R?.refusals?.length > 0 && <a href="#refusals">Limits</a>}
             <a href="#timeline">Timeline</a>
           </div>
           <label className="who">
@@ -465,12 +488,18 @@ export default function Page() {
               )
             })}
 
+            {ranAlready && <RunStory R={R} audit={d.audit} />}
+
             {R.playbook?.key === 'cover' && <DayStrip R={R} />}
 
             {/* Graph + findings */}
             <section className="section">
-              <SectionTitle label="What is connected" text="Discovered by Rook, with each node updated as actions are verified." />
-              <div className="card"><Graph graph={R.incident.graph} live={liveState(R.actions, R.incident.graph)} playbook={R.playbook?.key} /></div>
+              <SectionTitle label="What is connected"
+                text={ranAlready
+                  ? 'What Rook found, with what changed on it. Each box is read back from the system it lives on.'
+                  : 'What Rook found by reading every connected system. Nothing has been changed yet.'} />
+              <div className="card"><Graph graph={R.incident.graph} live={liveState(R.actions, R.incident.graph)}
+                playbook={R.playbook?.key} ran={ranAlready} /></div>
             </section>
 
             <section className="section">
@@ -537,7 +566,7 @@ export default function Page() {
               </ol>
             </section>
 
-            <Recovery R={R} audit={d.audit} checkpoints={d.checkpoints} />
+            <Recovery R={R} audit={d.audit} checkpoints={d.checkpoints} names={stepNames} />
 
             {/* Verification */}
             <section className="section" id="verify">
@@ -568,7 +597,7 @@ export default function Page() {
                 <ol className="timeline" ref={tl} tabIndex={0} aria-label="Audit events, oldest first">
                   {d.audit.map((e: any) => (
                     <li key={e.n} className={`ev-${eventTone(e.event)}`}>
-                      <time className="mono small">{time(e.ts)}</time><span>{eventText(e)}</span>
+                      <time className="mono small">{time(e.ts)}</time><span>{eventText(e, stepNames)}</span>
                     </li>
                   ))}
                 </ol>
@@ -589,7 +618,7 @@ export default function Page() {
                     {R.metrics.human_decisions > 0 && <> · {R.metrics.human_decisions} decision{R.metrics.human_decisions === 1 ? '' : 's'} escalated to a person</>}
                     {R.metrics.refusals > 0 && <> · {R.metrics.refusals} action{R.metrics.refusals === 1 ? '' : 's'} refused</>}
                   </p>
-                  {R.approvals.length > 0 && <p className="small">Approvals: {R.approvals.map((a: any) => `${a.decision} by ${a.by} at ${time(a.ts)}`).join('; ')}</p>}
+                  {R.approvals.length > 0 && <p className="small">Approvals: {R.approvals.map((a: any) => `${a.decision} by ${a.data?.name || a.by} at ${time(a.ts)}`).join('; ')}</p>}
                   {R.follow_ups.length > 0 && (<>
                     <h3 className="h4" style={{ marginTop: 16 }}><mark>Left for a person</mark></h3>
                     <ul className="facts">{R.follow_ups.map((f: string, i: number) => <li key={i}>→ {f}</li>)}</ul>
@@ -911,6 +940,64 @@ function Guide({ R, d, me, busy, who, approver, onRun, onApprover, onTry }: any)
   )
 }
 
+/**
+ * What just happened, in six lines a practice manager can read.
+ *
+ * Every number in it comes out of the same report the panels below are built from, so the story
+ * and the evidence can never disagree. Tools in this space show a tree of spans and leave the
+ * reader to assemble the account themselves; this is the account, with the tree underneath it.
+ */
+function RunStory({ R, audit }: { R: any; audit: any[] }) {
+  const acts = R.actions || [], conds = R.conditions || []
+  const verified = acts.filter((a: any) => a.status === 'verified').length
+  const passed = conds.filter((c: any) => c.result === true).length
+  const waited = R.approvals?.length || 0
+  const retried = acts.filter((a: any) => a.retries > 0).length
+  const systems = R.metrics?.systems_touched || 0
+  const secs = R.metrics?.seconds_until_closed ?? R.metrics?.seconds_to_contain
+  const reported = R.incident?.reported
+  const refused = (R.refusals || []).filter((r: any) => r.kind !== 'waiting')
+  const lines: [string, React.ReactNode][] = [
+    ['It started with', <>{R.incident.title}.{reported && <> Staff put it as: <i>&ldquo;{reported}&rdquo;</i></>}</>],
+    ['Rook read every connected system', <>
+      {R.incident.findings.length} finding{R.incident.findings.length === 1 ? '' : 's'}, and nothing was
+      changed while it looked. {R.incident.findings[0]?.text}
+    </>],
+    ['Before touching anything, it wrote the checks', <>
+      {conds.length} thing{conds.length === 1 ? '' : 's'} that would have to be true on the live systems
+      before this could be called done. They were written down first, which is what stops the finish line
+      moving later.
+    </>],
+    ['Then it worked the plan', <>
+      {acts.length} step{acts.length === 1 ? '' : 's'}{systems > 0 && <> across {systems} system{systems === 1 ? '' : 's'}</>}.
+      {waited > 0 && <> {waited} waited for a person and {waited === 1 ? 'was' : 'were'} approved.</>}
+      {retried > 0 && <> {retried} failed once; Rook checked the real state before retrying, so nothing was done twice.</>}
+      {refused.length > 0 && <> {refused.length} {refused.length === 1 ? 'was' : 'were'} refused on purpose.</>}
+    </>],
+    ['It checked its own work', <>
+      {passed} of {conds.length} checks passed, read back from the systems themselves rather than from any
+      tool&rsquo;s reply. {verified} of {acts.length} steps verified.
+    </>],
+    [R.status === 'closed_verified' ? 'And it closed, with proof' : 'And it stopped, rather than claim success', <>
+      {R.summary}{secs != null && R.status === 'closed_verified' && <> The whole thing took {secs} seconds.</>}
+      {R.follow_ups?.length > 0 && <> {R.follow_ups.length} thing{R.follow_ups.length === 1 ? '' : 's'} left for a person, named below.</>}
+    </>],
+  ]
+  return (
+    <section className="section" id="story">
+      <SectionTitle label="What just happened" text="The whole run in six lines. Everything below is the evidence for it." />
+      <ol className="story">
+        {lines.map(([head, body], i) => (
+          <li key={i}>
+            <span className="mono small story-n">{String(i + 1).padStart(2, '0')}</span>
+            <div><b>{head}</b><span>{body}</span></div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
 function SectionTitle({ label, text }: { label: string; text: string }) {
   return (
     <div className="section-title">
@@ -1006,7 +1093,7 @@ function HeroArt() {
   )
 }
 
-function Recovery({ R, audit, checkpoints }: { R: any; audit: any[]; checkpoints: any[] }) {
+function Recovery({ R, audit, checkpoints, names }: { R: any; audit: any[]; checkpoints: any[]; names: Record<string, string> }) {
   const failures = R.tool_calls.filter((c: any) => !['ok', 'rollback_ok', 'rollback_failed'].includes(c.outcome))
   const rollbacks = audit.filter((e) => e.event === 'rolled_back')
   const restored = audit.filter((e) => e.event === 'checkpoint_restored')
@@ -1017,11 +1104,11 @@ function Recovery({ R, audit, checkpoints }: { R: any; audit: any[]; checkpoints
         <div className="soft"><p className="muted">No failed tool calls so far. {checkpoints.length} checkpoints saved.</p></div>
       ) : (
         <div className="dark-panel">
-          {restored.map((e) => <div key={e.n} className="col"><span className="mono small lime">restart</span><p>{eventText(e)}</p></div>)}
+          {restored.map((e) => <div key={e.n} className="col"><span className="mono small lime">restart</span><p>{eventText(e, names)}</p></div>)}
           {rollbacks.map((e) => (
             <div key={e.n} className="recovery-row">
               <div className="col"><span className="mono small lime">01 · broken update</span><p>{e.data.target} accepted the new key but failed its independent check.</p></div>
-              <div className="col"><span className="mono small lime">02 · rollback</span><p>{eventText(e)}.</p><p className="small dim">{e.data.reason}</p></div>
+              <div className="col"><span className="mono small lime">02 · rollback</span><p>{eventText(e, names)}.</p><p className="small dim">{e.data.reason}</p></div>
               <div className="col"><span className="mono small lime">03 · result</span><p className={e.data.healthy_after_rollback ? 'lime' : 'err-text-dark'}>{e.data.healthy_after_rollback ? 'Service healthy again. Revocation held back; escalated to a person.' : 'Still unhealthy after rollback. Escalated.'}</p></div>
             </div>
           ))}
@@ -1042,7 +1129,7 @@ function Recovery({ R, audit, checkpoints }: { R: any; audit: any[]; checkpoints
                 <div className="col">
                   <span className="mono small lime">02 · checkpoint + inspect</span>
                   {cp && <p>Checkpoint #{cp.n} saved, step marked “outcome unclear”.</p>}
-                  {reconcile && <p className="small dim">{eventText(reconcile)}.</p>}
+                  {reconcile && <p className="small dim">{eventText(reconcile, names)}.</p>}
                 </div>
                 <div className="col">
                   <span className="mono small lime">03 · result</span>

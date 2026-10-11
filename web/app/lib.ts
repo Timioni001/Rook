@@ -142,9 +142,14 @@ const EVENT_TEXT: Record<string, (d: any) => string> = {
   cancel_requested: (d) => `Cancel requested by ${d.by}`,
 }
 
-export function eventText(e: any): string {
+const ACTION_ID = /inc-[0-9a-f]{8}-a\d{1,3}/g
+
+/** `names` turns an action id into the words the plan uses for it, so a timeline row reads as
+ *  "Running step 5 (Tell both clubs)" rather than "Running inc-6101b7eb-a5". */
+export function eventText(e: any, names?: Record<string, string>): string {
   const f = EVENT_TEXT[e.event]
-  return f ? f(e.data || {}) : e.event.replace(/_/g, ' ')
+  const text = f ? f(e.data || {}) : e.event.replace(/_/g, ' ')
+  return names ? text.replace(ACTION_ID, (id) => names[id] || id) : text
 }
 
 export function eventTone(name: string): string {

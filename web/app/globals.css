@@ -147,6 +147,22 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .status-card.tone-ok { background: var(--lime) } .status-card.tone-bad { background: var(--bad-bg) }
 .status-card.tone-warn { background: var(--warn-bg) } .status-card.tone-info { background: var(--info-bg) }
 
+/* the run, told as six lines */
+.story { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none }
+.story li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start;
+  background: var(--paper); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px }
+.story li > div { display: grid; gap: 3px }
+.story li b { font-size: 15px }
+.story li span { font-size: 14.5px; line-height: 1.5 }
+.story-n { opacity: .5; padding-top: 2px }
+.graph-key { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px;
+  font-size: 12.5px; color: var(--muted, #5c5a54) }
+.graph-key span { display: inline-flex; align-items: center; gap: 6px }
+.graph-key .dot { width: 10px; height: 10px; border-radius: 3px; border: 1.5px solid var(--ink); display: inline-block }
+.dot-ok { background: var(--lime) } .dot-warn { background: var(--paper) } .dot-bad { background: var(--bad-bg) }
+.graph-foot { margin-top: 10px }
+.edge-label { paint-order: stroke; stroke: var(--paper); stroke-width: 4px; stroke-linejoin: round }
+
 /* the plan, as a flow: one column per dependency level */
 .flow-wrap { overflow-x: auto; margin: 0 0 18px; padding-bottom: 4px }
 .flow { display: grid; gap: 10px; align-items: start; min-width: min-content }

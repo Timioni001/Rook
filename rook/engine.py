@@ -264,8 +264,8 @@ class Engine:
         if decision == "authorized":
             a.move(S.authorized)
             a.policy = {"decision": "authorized", "reason": reason, "rule": rule, "approval": approval}
-            self.store.approval(iid, a.id, "approved", principal.id, {"reason": reason})
-            self.store.audit(iid, "approval_granted", {"action": a.id, "by": principal.id})
+            self.store.approval(iid, a.id, "approved", principal.id, {"reason": reason, "name": principal.name})
+            self.store.audit(iid, "approval_granted", {"action": a.id, "by": principal.name or principal.id})
         else:
             self.store.approval(iid, a.id, "refused_by_policy", principal.id, {"reason": reason})
             self.store.audit(iid, "approval_rejected_by_policy", {"action": a.id, "by": principal.id, "reason": reason})
@@ -280,8 +280,8 @@ class Engine:
         a.move(S.blocked)
         a.policy = {**a.policy, "decision": "blocked", "reason": f"Rejected by {principal.id}. {note}".strip()}
         self.store.save_action(a)
-        self.store.approval(iid, a.id, "rejected", principal.id, {"note": note[:500]})
-        self.store.audit(iid, "approval_rejected", {"action": a.id, "by": principal.id})
+        self.store.approval(iid, a.id, "rejected", principal.id, {"note": note[:500], "name": principal.name})
+        self.store.audit(iid, "approval_rejected", {"action": a.id, "by": principal.name or principal.id})
         return a
 
     def _action(self, iid, action_id):
@@ -601,7 +601,7 @@ class Engine:
         return {
             "incident": inc.model_dump(mode="json"),
             "status": status,
-            "summary": summarize(inc, acts, status, bad, pb),
+            "summary": summarize(inc, acts, status, bad, pb, conds),
             "playbook": {"key": pb.key, "name": pb.name, "trigger": pb.trigger},
             "exposure": inc.exposure,
             "invariants": inv,
@@ -699,7 +699,8 @@ def evidence_pack(rep, audit, chain):
     L += ["", "## Actions", "| # | Action | Target | Status | Attempts | Policy | Reversible |", "|---|---|---|---|---|---|---|"]
     L += [f"| {i+1} | {a['type']} | {a['target']} | {a['status']} | {a['retries'] + 1} | {a['policy'].get('rule')} | {a['undo']} |"
           for i, a in enumerate(rep["actions"])]
-    L += ["", "## Approvals"] + ([f"- {x['decision']} by {x['by']} ({x['action']})" for x in rep["approvals"]] or ["- none"])
+    L += ["", "## Approvals"] + ([f"- {x['decision']} by {x['data'].get('name') or x['by']} "
+                                  f"(account {x['by']}, {x['action']})" for x in rep["approvals"]] or ["- none"])
     L += ["", "## Closure checks (independently observed)",
           "| Check | Result | Control | Also satisfies | Evidence |", "|---|---|---|---|---|"]
     for c in rep["conditions"]:
@@ -747,7 +748,7 @@ def blocked_reason(inv, bad, unresolved):
     return "; ".join(out) or "not yet evaluated"
 
 
-def summarize(inc, acts, status, bad, pb):
+def summarize(inc, acts, status, bad, pb, conds=()):
     done = sum(a.status == S.verified for a in acts)
     if status == IS.closed_verified.value:
         return pb.closed_summary(len(acts))
@@ -760,8 +761,12 @@ def summarize(inc, acts, status, bad, pb):
                 f"{len(waiting)} step{'' if len(waiting) == 1 else 's'}: " + shown
                 + (f" And {more} more like it." if more > 0 else ""))
     if status == IS.escalated.value:
-        probs = [f"{a.id} {a.type} on {a.target} is {a.status.value}" for a in acts if a.status in UNRESOLVED_BAD]
-        return ("Escalated to a human: Rook could not finish safely and will not claim success. "
+        probs = [f"{a.summary or a.type + ' on ' + a.target} is {a.status.value}"
+                 for a in acts if a.status in UNRESOLVED_BAD]
+        # Name the checks the way they are written for a reader, not by their id.
+        words = {c.id: c.description for c in conds}
+        named = [words.get(b, b) for b in bad]
+        return ("Escalated to a person: Rook could not finish safely and will not claim it did. "
                 + ("; ".join(probs) + ". " if probs else "")
-                + (f"Failing checks: {', '.join(bad)}." if bad else ""))
+                + (f"Still not true: {'; '.join(named)}." if named else ""))
     return f"{done} of {len(acts)} actions verified so far."
