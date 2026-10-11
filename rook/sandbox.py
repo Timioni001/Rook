@@ -288,8 +288,11 @@ def _apply_setup_identity(s, setup):
         s["records"]["clinic"] = name
         # What the care playbooks are scoped to, so a refusal says "belongs to <their name>".
         s["records"]["scope"] = name
-    if name or about:
-        s["profile"] = {k: v for k, v in (("name", name), ("about", about)) if v}
+    profile = {"name": name, "about": about,
+               "who_reports": setup.get("who_reports"), "who_approves": setup.get("who_approves")}
+    profile = {k: v for k, v in profile.items() if v}
+    if profile:
+        s["profile"] = profile
     away = setup.get("person_away")
     if away:
         for a, b, c in AWAY:

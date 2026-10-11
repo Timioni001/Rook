@@ -167,6 +167,7 @@ curl -X POST https://<your-service>/api/incidents \
        "setup":{"organisation":"Riverside Family Practice",
                 "we_do":"Two GP surgeries in Leeds, about 9,000 patients",
                 "person_away":"Dr Kofi Mensah","colleagues":["Dr Ruth Adeyemi","Dr Tom Hale"],
+                "who_reports":"Grace Boateng","who_approves":"Dr Amina Yusuf",
                 "people_booked_in":7,"cover_slots":2,"people_we_cannot_reach":1,"one_step_fails":true}}'
 ```
 
@@ -174,6 +175,10 @@ What comes back is about your organisation: the incident title, every step of th
 approval requests, the refusals and the evidence pack are written out of what you typed, because
 Rook builds those sentences from the state rather than from a script. Nothing the sandbox invented
 is left in them.
+
+`who_reports` and `who_approves` put your own people's names on the sign-in menu. They are names
+only: who may start an incident and who may approve one is decided by the token the server checks,
+and the evidence pack still records the account that actually approved.
 
 Every field is bounded, text must be plain (no control characters and nothing that reads as
 markup), and unknown fields are refused, so describing your organisation cannot ask the service

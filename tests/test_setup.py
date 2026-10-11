@@ -171,3 +171,18 @@ def test_a_business_that_is_not_a_clinic_gets_its_own_words_too():
         rep = c.get(f"/api/incidents/{made['id']}", headers=H).json()["report"]
         assert "Marcus Ngata" in rep["incident"]["findings"][0]["text"]
         assert "Jordan Doe" not in json.dumps(rep)
+
+
+def test_an_organisation_names_its_own_people_without_naming_their_authority():
+    """The names reach the record. The right to approve still comes from the token, not the body."""
+    named = dict(OWN, who_reports="Grace Boateng", who_approves="Dr Amina Yusuf")
+    with TestClient(app()) as c:
+        made = c.post("/api/incidents", headers=H, json={"scenario": "cover_clean", "setup": named}).json()
+        rep = c.get(f"/api/incidents/{made['id']}", headers=H).json()["report"]
+        assert rep["incident"]["organisation"]["who_approves"] == "Dr Amina Yusuf"
+        pack = c.get(f"/api/incidents/{made['id']}/evidence", headers=H).text
+        assert "- Approves them: Dr Amina Yusuf" in pack
+        # The analyst named itself the approver. It still cannot approve anything.
+        a = next(a for a in rep["actions"] if a["status"] == "needs_approval")
+        r = c.post(f"/api/incidents/{made['id']}/actions/{a['id']}/approve", headers=H, json={})
+        assert r.status_code == 403

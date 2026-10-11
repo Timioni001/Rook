@@ -668,6 +668,12 @@ def evidence_pack(rep, audit, chain):
          "## Summary", rep["summary"], ""]
     if inc.get("reported"):
         L += ["## Reported by staff as", f"> {inc['reported']}", ""]
+    if org.get("who_reports") or org.get("who_approves"):
+        # Names the organisation gave its own people. The approvals below still record the
+        # account the server authenticated, which is what actually carries the authority.
+        L += ["## People, as this organisation names them",
+              f"- Raises incidents: {org.get('who_reports') or 'not named'}",
+              f"- Approves them: {org.get('who_approves') or 'not named'}", ""]
     L += [
          "## What this replaced",
          f"- Systems acted on: {rep['metrics']['systems_touched']}",

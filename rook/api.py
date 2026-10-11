@@ -68,13 +68,17 @@ class Setup(BaseModel):
     we_do: Optional[str] = Field(default=None, max_length=140)
     person_away: Optional[str] = Field(default=None, max_length=60)
     colleagues: Optional[list[str]] = Field(default=None, max_length=2)
+    # The organisation's own words for the two people in the loop. Names only: who may start
+    # an incident and who may approve one still comes from the token the server checks.
+    who_reports: Optional[str] = Field(default=None, max_length=60)
+    who_approves: Optional[str] = Field(default=None, max_length=60)
     people_booked_in: Optional[int] = Field(default=None, ge=1, le=12)
     cover_slots: Optional[int] = Field(default=None, ge=0, le=12)
     people_we_cannot_reach: Optional[int] = Field(default=None, ge=0, le=12)
     one_result_is_urgent: bool = False
     one_step_fails: bool = False
 
-    @field_validator("organisation", "we_do", "person_away")
+    @field_validator("organisation", "we_do", "person_away", "who_reports", "who_approves")
     @classmethod
     def _plain(cls, v):
         return v if v is None else plain(v)

@@ -22,6 +22,23 @@ const PERSON_AWAY: Record<string, { label: string; hint: string }> = {
 const COLLEAGUES: Record<string, string[]> = {
   cover: ['A colleague who could take some of the list', 'Another colleague who could'],
 }
+// The two people in the loop, named by whoever runs the place. These change the labels only:
+// who may start an incident and who may approve one is still decided by the sign-in the server
+// checks, never by anything typed here.
+const IN_THE_LOOP = [
+  { key: 'who_reports', label: 'Who raises problems (reception, a nurse, anyone)', hint: 'Grace Boateng', max: 60 },
+  { key: 'who_approves', label: 'Who signs off anything that reaches a patient', hint: 'Dr Amina Yusuf', max: 60 },
+]
+
+// The demo sign-ins, relabelled with those names where they have been given.
+const ROLE_WORD: Record<string, string> = { analyst: 'staff', approver: 'manager (approves)' }
+function identityList(setup: Record<string, any>) {
+  const typed: Record<string, string> = {
+    analyst: String(setup.who_reports || '').trim(), approver: String(setup.who_approves || '').trim(),
+  }
+  return IDENTITIES.map((i) => (typed[i.key] ? { ...i, label: `${typed[i.key]} \u00b7 ${ROLE_WORD[i.key]}` } : i))
+}
+const approverName = (setup: Record<string, any>) => String(setup.who_approves || '').trim() || 'Priya'
 
 // Numbers a person can change to describe a situation nobody wrote in advance. Bounds match the API's.
 const SETUP_NUMBERS: Record<string, { key: string; label: string; min: number; max: number }[]> = {
@@ -231,7 +248,7 @@ export default function Page() {
           <label className="who">
             <span className="sr-only">Signed in as (demo identity)</span>
             <select id="who" value={who.key} onChange={(e) => setWho(e.target.value)}>
-              {IDENTITIES.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
+              {identityList(setup).map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
             </select>
           </label>
         </nav>
@@ -292,7 +309,7 @@ export default function Page() {
 
         <HowItWorks />
 
-        <Guide R={R} d={d} me={me} busy={busy} who={who}
+        <Guide R={R} d={d} me={me} busy={busy} who={who} approver={approverName(setup)}
           onRun={() => act(() => api(who.token, `/incidents/${id}/run`, {}), 'Run started.')}
           onApprover={() => setWho('approver')}
           onTry={(pb: string, sc: string) => { setPlaybook(pb); setScenario(sc); setId(null); setD(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
@@ -404,7 +421,7 @@ export default function Page() {
                       {isApprover ? (<>
                         <button className="btn-lime" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/approve`, {}), 'Approved. Rook is continuing.')}>Approve: {ACTION_LABEL[a.type] || a.type}</button>
                         <button className="btn-ghost" disabled={busy} onClick={() => act(() => api(who.token, `/incidents/${id}/actions/${a.id}/reject`, { note: 'Rejected from dashboard' }), 'Rejected. The incident will be escalated.')}>Reject</button>
-                      </>) : <p className="small">Waiting for someone with the approver role. Switch to “Priya” to approve.</p>}
+                      </>) : <p className="small">Waiting for someone with the approver role. Switch to “{approverName(setup)}” to approve.</p>}
                     </div>
                   </div>
                 </section>
@@ -680,6 +697,12 @@ function YourSituation({ playbook, setup, onChange, reported, onReported }: {
           <span className="own-left mono small">{300 - reported.length} characters left</span>
         </label>
 
+        <span className="own-group mono small">Who is in the loop</span>
+        {IN_THE_LOOP.map(text)}
+        <p className="small muted">These are names on the sign-in menu, nothing more. Who is allowed to start an
+          incident and who is allowed to approve one is still decided by the sign-in itself, which the agent
+          checks on every request.</p>
+
         {(away || colleagues.length > 0) && <span className="own-group mono small">Your people</span>}
         {away && text({ key: 'person_away', ...away })}
         {colleagues.map((label, i) => (
@@ -723,7 +746,7 @@ function HowToUse() {
     ['Or put your own organisation in', 'Open “Tell Rook about your own organisation” and type your clinic or company name, who is off, who can cover and what you are reporting. Everything that comes back is written about you.'],
     ['Read what Rook found', 'It has looked across every connected system and changed nothing yet. The Findings say who is affected and why.'],
     ['Press Run plan', 'Watch the Plan and the Timeline. Each step is checked against the system itself before the next one starts.'],
-    ['Approve when it stops', 'Rook will not message a patient without a person saying yes. Switch the menu at the top right to Priya (manager) and approve.'],
+    ['Approve when it stops', 'Rook will not message a patient without a person saying yes. Switch the menu at the top right to the manager and approve.'],
     ['Check the proof, not the promise', 'Verification lists what was confirmed against the live systems. Closed means every one of them passed.'],
     ['See what it refused to do', 'Open “Limits”. Try scenario “cover unreachable” to watch Rook deliberately leave one appointment alone, and say why.'],
     ['Take the evidence away', 'Download the evidence pack at the bottom: every action, approval, check and a tamper-evident audit trail.'],
@@ -766,12 +789,12 @@ function HowItWorks() {
 }
 
 /** Plain-language "what now?" for whoever is looking at the screen. */
-function Guide({ R, d, me, busy, who, onRun, onApprover, onTry }: any) {
+function Guide({ R, d, me, busy, who, approver, onRun, onApprover, onTry }: any) {
   const isApprover = !!me?.roles.includes('approver'), isAnalyst = !!me?.roles.includes('analyst')
   let step = '', title = '', text = '', action: React.ReactNode = null
   if (!R) {
     step = 'Start'; title = 'Pick a problem above, then press the button.'
-    text = 'Five kinds, from a doctor calling in sick to a key found in a repository. Or open “Or describe your own situation” and set the numbers yourself. Every system behind them is a sandboxed copy, so nothing real is touched.'
+    text = 'Five kinds, from a doctor calling in sick to a key found in a repository. Or open “Tell Rook about your own organisation” and put your own clinic or company in. Every system behind them is a sandboxed copy, so nothing real is touched.'
     if (me && !isAnalyst) text = `${who.label} can only watch. Switch to Sam in the top-right menu to start an incident.`
   } else if (d?.running) {
     step = 'Working'; title = 'Rook is fixing the incident now.'
@@ -782,8 +805,9 @@ function Guide({ R, d, me, busy, who, onRun, onApprover, onTry }: any) {
     if (isAnalyst) action = <button className="btn-dark" disabled={busy} onClick={onRun}>Run plan</button>
   } else if (R.status === 'awaiting_approval') {
     step = 'Step 3 of 4'; title = 'Rook is waiting for a person to approve a step that cannot be undone.'
-    text = isApprover ? 'Read the black approval card below, then approve or reject it.' : 'Only someone with approver rights can sign off, like Priya, the IT lead.'
-    if (!isApprover) action = <button className="btn-lime" onClick={onApprover}>Switch to Priya (approver)</button>
+    text = isApprover ? 'Read the black approval card below, then approve or reject it.'
+      : `Only someone with approver rights can sign off, like ${approver}, the manager.`
+    if (!isApprover) action = <button className="btn-lime" onClick={onApprover}>Switch to {approver} (approver)</button>
     else action = <button className="btn-lime" onClick={() => document.getElementById('approval')?.scrollIntoView({ behavior: 'smooth' })}>Go to the approval</button>
   } else if (R.status === 'closed_verified') {
     step = 'Done'; title = 'Fixed, and proven fixed: every check passed on the live systems.'
