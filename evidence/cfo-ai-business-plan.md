@@ -7,7 +7,7 @@ exists so the inputs can be argued with.
 
 Nothing here is presented as a result that has already happened. Rook has no customers yet.
 
-Plan link: _paste the cfo.ai share link here_
+Plan link: https://cfo.ai/s/D9MnZeXwqy0WpZeV
 
 ---
 
