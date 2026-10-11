@@ -120,7 +120,24 @@ month 6, the plan needs roughly another $11,000. That is the sensitivity worth r
 before anything else.
 
 The month-by-month build ignores churn so the ramp stays legible. Apply the 2% in cfo.ai; it costs
-roughly two customers by month 12.
+roughly four customers by month 12: 56 rather than 60, and $15,680 MRR rather than $16,800.
+
+### The one question that changes the answer: is CAC cash?
+
+The $600 is mostly founder time, so the figures above carry it inside the founder draw rather than
+as money leaving the bank. That assumption is doing a lot of work, so here is the same ramp both
+ways, with 2% churn applied:
+
+| CAC treatment | Lowest cash | When | Cash at month 12 | Type |
+|---|---|---|---|---|
+| Founder time, inside the draw | **$2,320** | month 7 | $26,173 | derived |
+| Paid in cash, on top of the draw | **-$14,539** | month 10 | -$9,827 | derived |
+
+So the honest statement is: the plan clears $30,000 only while acquisition is founder time. The
+moment it becomes paid acquisition at $600, year one needs roughly **$15,000 more capital**, or a
+slower ramp, or a cheaper channel. The MSP resale channel in section 5 is the cheaper channel.
+
+Both rows are computed from the ramp in section 4, by script rather than by eye.
 
 ## 7. What breaks this model
 
