@@ -1,6 +1,16 @@
 import './globals.css'
 
-export const metadata = { title: 'Rook · IT incidents, resolved and proven fixed', description: 'Investigate. Contain. Verify.' }
+const TITLE = 'Rook · the operations agent that proves the fix'
+const DESC = 'Staff report a problem. Rook investigates across every system it touches, waits for a person '
+  + 'before anything reaches someone outside, then checks the result and shows the evidence.'
+
+export const metadata = {
+  metadataBase: new URL('https://rook-keywarden.pages.dev'),
+  title: TITLE,
+  description: DESC,
+  openGraph: { title: TITLE, description: DESC, type: 'website', images: ['/og.png'] },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESC, images: ['/og.png'] },
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
