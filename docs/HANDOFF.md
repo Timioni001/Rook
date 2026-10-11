@@ -31,7 +31,7 @@ A web application a company connects to the software it already runs. Staff repo
 ```bash
 ./scripts/setup-wsl.sh        # once: Node 22, uv + Python 3.13 venv (neatlogs needs < 3.14), npm ci, cloudflared
 ./scripts/dev.sh              # API :8000 + dashboard http://localhost:3000
-.venv/bin/pytest -q           # 120 tests
+.venv/bin/pytest -q           # 136 tests
 .venv/bin/python -m rook.demo --scenario outage
 ```
 

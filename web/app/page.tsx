@@ -506,6 +506,7 @@ export default function Page() {
             {/* Plan */}
             <section className="section" id="plan">
               <SectionTitle label="Plan" text="Steps run in this order. Each one is checked against live state before the next can start." />
+              <PlanFlow actions={R.actions} />
               <ol className="plan">
                 {R.actions.map((a: any, i: number) => {
                   const s = actionState(a)
@@ -777,6 +778,46 @@ function YourSituation({ playbook, setup, onChange, reported, onReported }: {
         )}
       </div>
     </details>
+  )
+}
+
+// The plan as the engine actually holds it: columns are dependency depth, so what can run at the
+// same time sits in the same column and nothing is drawn as a queue that is not one.
+function PlanFlow({ actions }: { actions: any[] }) {
+  if (!actions.length) return null
+  const byId: Record<string, any> = Object.fromEntries(actions.map((a) => [a.id, a]))
+  const depth: Record<string, number> = {}
+  const of = (a: any): number => {
+    if (depth[a.id] != null) return depth[a.id]
+    depth[a.id] = 0                                    // set first: a cycle cannot hang the page
+    const deps = (a.depends_on || []).map((x: string) => byId[x]).filter(Boolean)
+    depth[a.id] = deps.length ? 1 + Math.max(...deps.map(of)) : 0
+    return depth[a.id]
+  }
+  actions.forEach(of)
+  const cols: any[][] = []
+  actions.forEach((a) => { (cols[depth[a.id]] ||= []).push(a) })
+  const n = (a: any) => actions.findIndex((x) => x.id === a.id) + 1
+  return (
+    <div className="flow-wrap">
+      <div className="flow" style={{ gridTemplateColumns: `repeat(${cols.length}, minmax(178px, 1fr))` }}>
+        {cols.map((col, i) => (
+          <div className="flow-col" key={i}>
+            <span className="mono small flow-head">{i === 0 ? 'first' : i === 1 ? 'then' : 'after that'}</span>
+            {col.map((a) => {
+              const st = actionState(a)
+              return (
+                <div key={a.id} className={`flow-node flow-${st.tone}`} title={a.summary}>
+                  <span className="mono small">{String(n(a)).padStart(2, '0')} · {st.label}</span>
+                  <b>{ACTION_LABEL[a.type] || a.type}</b>
+                  <span className="small dim">{a.target}</span>
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

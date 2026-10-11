@@ -147,6 +147,24 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .status-card.tone-ok { background: var(--lime) } .status-card.tone-bad { background: var(--bad-bg) }
 .status-card.tone-warn { background: var(--warn-bg) } .status-card.tone-info { background: var(--info-bg) }
 
+/* the plan, as a flow: one column per dependency level */
+.flow-wrap { overflow-x: auto; margin: 0 0 18px; padding-bottom: 4px }
+.flow { display: grid; gap: 10px; align-items: start; min-width: min-content }
+.flow-col { display: grid; gap: 8px; position: relative; padding-left: 14px }
+.flow-col:first-child { padding-left: 0 }
+.flow-col:not(:first-child)::before { content: "\2192"; position: absolute; left: -2px; top: 34px;
+  font-family: var(--mono); opacity: .45 }
+.flow-head { opacity: .55; letter-spacing: .04em; text-transform: uppercase }
+.flow-node { border: 1.5px solid var(--ink); border-radius: 12px; padding: 8px 10px; background: var(--paper);
+  display: grid; gap: 2px; border-left-width: 5px }
+.flow-node b { font-size: 14px; line-height: 1.25 }
+.flow-node .dim { overflow-wrap: anywhere }
+.flow-ok { border-left-color: var(--ok) }
+.flow-bad { border-left-color: var(--bad) }
+.flow-warn { border-left-color: var(--warn) }
+.flow-info { border-left-color: var(--info) }
+.flow-mute { border-left-color: var(--line) }
+
 /* graph */
 .graph-wrap { overflow-x: auto }
 .graph-wrap svg { width: 100%; height: auto; display: block; font-family: var(--sans) }

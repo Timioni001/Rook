@@ -138,10 +138,19 @@ docker build -t rook . && docker run --rm -p 8000:8000 rook   # http://localhost
 ### Tests and checks
 
 ```bash
-python -m pytest -q                      # 120 tests
+python -m pytest -q                      # 136 tests
 cd web && npm ci && npx tsc --noEmit && npm run build:static
 bash scripts/build-pages.sh              # exactly what Cloudflare Pages runs
 ```
+
+### Signing in
+
+Sign-in is coming soon. For now the dashboard has four demo identities in the top-right menu, and
+whoever you pick decides what you may do: staff can start an incident, only a manager can approve a
+step that reaches someone outside the organisation, a read-only viewer can do neither, and someone
+from another company cannot see the incident at all. That is not cosmetic. Identity, organisation
+and role come from the bearer token the agent checks on every request, never from anything the page
+sends, so the permission model on display is the real one.
 
 ### Scenarios
 
@@ -233,6 +242,6 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 - Demo bearer tokens are built in for local use. Set `KEYWARDEN_TOKENS` (JSON) and `KEYWARDEN_DEMO_TOKENS=0` anywhere shared.
 - There is a single shared sandbox, so only one incident runs at a time.
 - The optional model planner (`ROOK_PLANNER=llm`) covers the offboarding playbook and only proposes actions. Ordering, policy and verification stay deterministic.
-- Five playbooks so far. Each new incident type is a new playbook plus the adapter operations it needs.
+- Six playbooks so far, across four industries. Each new incident type is a new playbook plus the adapter operations it needs.
 - The clinic playbooks are administrative only. Rook chases paperwork and contacts people; it never reads a result clinically or decides care, and anything urgent goes straight to a doctor. All patients, clinics and records in it are synthetic.
 - The control mapping in the evidence pack is indicative. It is a starting point to confirm with an auditor, not a claim that an audit would pass.
