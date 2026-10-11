@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Copy Entire checkpoints from local git refs into .entire/checkpoints/<id>/ as ordinary files.
 
+For local inspection only. .entire/ is gitignored: a checkpoint holds a full session transcript,
+and a repository is the wrong place for one. The durable record of a session is the
+`Entire-Checkpoint:` trailer on the commits it produced.
+
 Entire stores checkpoints as git refs (refs/entire/checkpoints/*). Those refs only travel with an
 explicit push, so this script also writes each checkpoint as plain files that are committed with the
 code and merge into main with it. Per checkpoint it keeps the metadata, the prompt and the compact

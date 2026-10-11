@@ -48,7 +48,7 @@ The Pages project must have its root directory set to `web` (build command `npm 
 
 ## Rules for this repo
 
-- No AI-assistant attribution in commits, PR text or code (no co-author lines, no session links, no model names). The exception is Entire records: `.claude/` hooks, `.entire/`, `Entire-Checkpoint` trailers and checkpoints.
+- No AI-assistant attribution anywhere in the repository: no co-author lines, no session links, no model names, no agent config and no session transcripts. The build's agent sessions are recorded through Entire instead, as `Entire-Checkpoint:` trailers on the commits they produced.
 - Never commit secrets. Keys live in `.env` (gitignored) or in the host's settings.
 - Use synthetic systems and credentials only. Rook never runs arbitrary shell commands.
 - Don't invent evidence or financial numbers. cfo.ai figures come from the team's plan.
@@ -56,7 +56,7 @@ The Pages project must have its root directory set to `web` (build command `npm 
 
 ## Entire
 
-Turn it on locally with `entire enable --agent <your agent>` so new sessions keep producing checkpoints. Locally, `git push` can carry the checkpoint refs. Earlier checkpoints were exported as files under `.entire/checkpoints/` (with `scripts/export-entire-checkpoints.py`), and `evidence/entire-workflow.md` lists them.
+Turn it on locally with `entire enable --agent <your agent>` so new sessions keep producing checkpoints; that writes the agent's hook config into your own checkout, which is ignored by git. Locally, `git push` can carry the checkpoint refs. `evidence/entire-workflow.md` lists the checkpoints and the commit each one belongs to.
 
 ## Still to do
 

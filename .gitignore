@@ -16,3 +16,5 @@ web/.wrangler/
 /functions/
 /.pages-deploy/
 .pytest_cache/
+.claude/
+.entire/
