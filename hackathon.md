@@ -96,6 +96,12 @@ Asked about a React Native component library for the visuals. It cannot be used:
 - `referral_all_good` exposed a real flaw. An empty plan could never close, because the invariant required at least one action, so an agent that correctly found nothing to do sat at "open" forever. Finding nothing is a real outcome: an empty plan now closes when the closure checks exist and pass, and stays open when there are none to check.
 - 120 tests.
 
+**05:10: the two partner tools that were still stubs.**
+
+- **cfo.ai**: wrote the input sheet. Every line is labelled measured, benchmark or assumption, so a reader can attack the assumptions rather than the arithmetic. Pricing is set at 58% of measured value for a standard clinic rather than at the ceiling. Cost to serve is ~$27/customer/month at ~90% gross margin, and the unusual line is real: **zero inference cost**, because ordering, policy and verification are deterministic code rather than a model. Break-even is 22 clinics, reached in month 8 on the assumed ramp. The honest finding is the headroom: the plan survives $30,000 of starting capital with **$2,320 to spare in its worst month**, so the month of first revenue and CAC are the only two assumptions that really matter. Checked the arithmetic in a script rather than by eye, which caught two wrong numbers in the first draft.
+- **neatlogs**: `ingest.neatlogs.com` answers 401 rather than refusing the connection, so the host was never the problem; only the key is missing. `scripts/neatlogs-evidence.sh` now produces the whole evidence set in one command: the two "before" runs from a git worktree at `0817443`, then every playbook as it is now, labelled so the dashboard can filter them apart. Verified end to end without a key: both versions run on the same virtual environment and reproduce the documented numbers exactly, 3 and 6 steps with a dependent broken before, 0 after.
+- Measured per-playbook span volume with an in-memory exporter: 20 to 130 spans per incident, mean 52. That is the number the cost model is built on, rather than a guess.
+
 ## Open items
 
 - Export real neatlogs traces from a machine that can reach `ingest.neatlogs.com`, then add the links.

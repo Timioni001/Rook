@@ -6,8 +6,9 @@
 |---|---|
 | SDK installed (`neatlogs` 1.4.26) and initialised in the agent (`rook/obs.py:init_neatlogs`) | done |
 | Spans for every workflow phase, with redaction | done, verified locally with an in-memory OpenTelemetry exporter (`tests/test_tracing.py`) |
-| Traces arriving in the neatlogs dashboard | **not yet verified.** The build environment's network policy blocks `ingest.neatlogs.com`, so a run with a project key from a machine that can reach it is still needed |
-| Before/after trace links | **pending.** The numbers below are measured, but the trace links don't exist yet |
+| `ingest.neatlogs.com` reachable | yes. It answers `401` without a key, so the host is reachable and only wants credentials. An earlier build environment blocked it; that is no longer the limitation |
+| Traces arriving in the neatlogs dashboard | **pending one run with the project key.** `./scripts/neatlogs-evidence.sh` does the whole thing in one command |
+| Before/after trace links | **pending.** The numbers below are measured and reproducible; only the dashboard URLs are missing |
 
 ## What is traced
 
@@ -45,29 +46,53 @@ The change: the original agent rotated the key (revoking the old one) and only t
 
 Measured with `python -m rook.demo`, running commit `0817443` for before and the current branch for after. Raw JSON is in [runs/](runs/):
 
-| Scenario | Before (`0817443`) | After |
-|---|---|---|
-| One transient failure | closed, **3 steps with billing-app down** | closed, **0 steps with any dependent down** |
-| Persistent failure | **billing-app left broken** (6 steps down, old key revoked, repair failed) | escalated with **0 steps down**: revocation never ran |
-| Dependents found | 1 (vault metadata only) | 2 (live config scan also finds payments-worker) |
+| Scenario | Before (`0817443`) | After | Re-measured |
+|---|---|---|---|
+| One transient failure | closed, **3 steps with billing-app down** | closed, **0 steps with any dependent down** | yes, 2026-10-11 |
+| Persistent failure | left **open** with billing-app broken for **6 steps**, old key revoked, repair failed | escalated with **0 steps down**: revocation never ran | yes, 2026-10-11 |
+| Dependents found | 1 (vault metadata only) | 2 (live config scan also finds payments-worker) | — |
 
 Note that the before seed had no `payments-worker`. The "dependents found" row describes the discovery method, not a like-for-like run.
 
-## Producing the dashboard traces (needs a machine that can reach neatlogs)
+One number needs reading carefully. `dependent_outage_steps` is 2 on the `outage` scenario, which
+looks like a regression and is not: in that playbook the service is already down when the incident
+opens, because that is the incident. The before/after comparison is the credential rotation
+scenarios, where the agent itself caused the outage it is being measured on.
+
+## Per-playbook trace volume, measured
+
+Counted with an in-memory OpenTelemetry exporter, so these are the spans a real export would send.
+
+| Playbook / scenario | Spans | Actions | Tool calls | Closure checks |
+|---|---|---|---|---|
+| offboarding / signature | 43 | 7 | 8 | 13 |
+| outage / outage | 20 | 3 | 3 | 7 |
+| leak / leak | 35 | 5 | 6 | 11 |
+| care / referral_clean | 50 | 9 | 9 | 13 |
+| cover / cover_clean | 130 | 24 | 24 | 26 |
+| cover / cover_short | 50 | 8 | 8 | 10 |
+
+Mean 52 spans per incident. That figure is what the cost-per-customer line in
+[cfo-ai-business-plan.md](cfo-ai-business-plan.md) is built on.
+
+## Producing the dashboard traces
+
+One command, with the project key in the environment:
 
 ```bash
-export NEATLOGS_API_KEY=...            # project key; never commit it
-# before
-git checkout 0817443 && pip install -r requirements.txt
-ROOK_DEMO_LABEL=before python -m rook.demo --scenario transient
-ROOK_DEMO_LABEL=before python -m rook.demo --scenario persistent
-# after
-git checkout keywarden-build-v7m54f && pip install -r requirements.txt
-ROOK_DEMO_LABEL=after python -m rook.demo --scenario signature
-ROOK_DEMO_LABEL=after python -m rook.demo --scenario persistent
+read -rs NEATLOGS_API_KEY && export NEATLOGS_API_KEY   # not echoed, not written to history
+./scripts/neatlogs-evidence.sh
 ```
 
-Each run prints `neatlogs_delivery` counters (`span_export_failures` should be 0). Open the traces under workflow `rook-incident-response`, filter by `rook.label`, and paste the trace URLs or screenshots here.
+It runs the two "before" scenarios from a git worktree at `0817443` and every playbook as it is
+now, labelled `before` and `after`. The working tree is never checked out or modified. Both
+versions run on the same virtual environment, because the dependencies did not change.
+
+Verified end to end without a key: the worktree builds, both versions run, and the numbers below
+come straight out of it. Only the export step needs the key.
+
+Each run prints `neatlogs_delivery` counters; `span_export_failures` should be 0. Open the traces
+under workflow `rook-incident-response`, filter by the `rook.label` tag, and paste the URLs below.
 
 | Trace | URL |
 |---|---|
@@ -75,3 +100,6 @@ Each run prints `neatlogs_delivery` counters (`span_export_failures` should be 0
 | before / persistent | _pending_ |
 | after / signature | _pending_ |
 | after / persistent | _pending_ |
+| after / cover_clean (a doctor off sick) | _pending_ |
+| after / cover_unreachable (Rook refuses to move one appointment) | _pending_ |
+| after / referral_critical (Rook alerts a doctor and stops) | _pending_ |

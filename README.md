@@ -117,7 +117,7 @@ cd web && npm install && npm run dev            # http://localhost:3000
 
 In the dashboard, pick an incident type and a scenario, click **Investigate**, then click **Run plan**. When Rook pauses, switch identity to **Priya (approver)** and approve the revocation. The run continues to closure. Switch to **Eve**, who belongs to a different company, and the incident disappears.
 
-To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. **To go live with no terminal (Render runs the agent, Cloudflare Pages serves the dashboard, neatlogs traces every incident), follow [deploy/README.md](deploy/README.md).**
+To trace to neatlogs, set `NEATLOGS_API_KEY` before starting the demo or the API. For the submission evidence, `./scripts/neatlogs-evidence.sh` sends the before/after pair and every playbook in one run, then tells you what to paste where. **To go live with no terminal (Render runs the agent, Cloudflare Pages serves the dashboard, neatlogs traces every incident), follow [deploy/README.md](deploy/README.md).**
 
 ### Keep a live demo usable at any hour
 
@@ -197,7 +197,7 @@ Key safety properties are listed in [evidence/security-notes.md](evidence/securi
 
 - **neatlogs**: one session per incident, with typed guardrail, tool and retriever spans, logged steps, a version tag and export masking. Every workflow phase is a span (`incident.run` WORKFLOW, `investigate`/`plan` AGENT, `policy.*`/`verify`/`closure.evaluate` GUARDRAIL, `execute` TOOL, `reconcile`/`checkpoint.restore` CHAIN). Attributes cover incident ID, adapter, action type, attempt, decision and verification result. Secret values are never included. The before/after comparison is the remediation-order change. [Evidence](evidence/neatlogs-traces.md).
 - **Entire**: records the agent coding sessions that build Rook as checkpoints linked to commits, enabled from 2026-10-10 09:30 UTC. [How to inspect them](evidence/entire-workflow.md).
-- **cfo.ai**: the business plan behind Keywarden's pricing and costs. [Evidence](evidence/cfo-ai-business-plan.md).
+- **cfo.ai**: the business model behind Rook, written as a sheet of named assumptions so each one can be argued with: pricing against measured value, cost to serve (zero inference, 52 spans per incident), the year-one build, break-even at 22 clinics and where the plan runs out of room. [Evidence](evidence/cfo-ai-business-plan.md).
 - **Cloudflare**: Cloudflare Pages serves the dashboard and forwards `/api/*` through a Pages Function to the agent on Render (`render.yaml`). A Cloudflare Worker on a cron trigger (`deploy/keepwarm`) keeps that agent awake so the public link answers immediately whenever someone opens it. Cloudflare Tunnel (`scripts/share.sh`) is the alternative for running from your own machine. All three are covered in [deploy/README.md](deploy/README.md).
 
 ## Limitations
