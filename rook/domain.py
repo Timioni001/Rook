@@ -67,6 +67,8 @@ class Incident(BaseModel):
     findings: list[dict] = []          # plain-language, evidence-backed
     exposure: str = ""
     ticket: Optional[str] = None
+    reported: str = ""                 # what the person who raised it typed, in their own words
+    organisation: dict = {}            # {name, about}: how the company described itself at setup
 
 
 class Action(BaseModel):

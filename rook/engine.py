@@ -165,12 +165,13 @@ class Engine:
             return LLMPlanner()
         return pb
 
-    def start(self, subject=None, org="acme", created_by="system", scenario=None, extra_actions=(), playbook=None):
+    def start(self, subject=None, org="acme", created_by="system", scenario=None, extra_actions=(),
+              playbook=None, reported=""):
         iid = "inc-" + uuid.uuid4().hex[:8]
         pb = playbook_for(scenario, playbook)
         with span("incident.start", session=iid, user=created_by, user_meta={"org": org},
                   incident=iid, org=org, scenario=scenario or "", playbook=pb.key) as root:
-            root.io(input=f"{pb.name}: {pb.trigger.lower()}" + (f" ({scenario})" if scenario else ""))
+            root.io(input=reported or f"{pb.name}: {pb.trigger.lower()}" + (f" ({scenario})" if scenario else ""))
             if subject is None:                       # trigger: the playbook's own (ticket, alert, ...)
                 subject = pb.find_subject(self.sb)
                 if subject is None:
@@ -188,7 +189,8 @@ class Engine:
                            playbook=pb.key, title=pb.title(person, subject),
                            relationships=rel, graph=graph, findings=finds,
                            exposure=" ".join(f["text"] for f in finds),
-                           severity="high" if any(f["severity"] == "high" for f in finds) else "medium")
+                           severity="high" if any(f["severity"] == "high" for f in finds) else "medium",
+                           reported=reported, organisation=self.sb.profile())
             self.store.save_incident(inc)
             self.store.audit(iid, "investigated", {"relationships": rel, "findings": [f["text"] for f in finds]})
 
@@ -654,13 +656,19 @@ class Engine:
 def evidence_pack(rep, audit, chain):
     """Markdown evidence for auditors: what happened, who approved, what was verified, and integrity."""
     inc = rep["incident"]
+    org = inc.get("organisation") or {}
     L = [f"# Incident evidence: {inc['id']}", "",
-         f"- Title: {inc['title']}", f"- Status: **{rep['status']}**", f"- Organisation: {inc['org']}",
+         f"- Title: {inc['title']}", f"- Status: **{rep['status']}**",
+         f"- Organisation: {org.get('name') or inc['org']}"
+         + (f" -- {org['about']}" if org.get("about") else ""),
          f"- Opened by: {inc['created_by']}", f"- Tracking ticket: {inc.get('ticket') or 'none'}",
          f"- Incident type: {rep['playbook']['name']}",
          f"- {rep['metrics']['contain_label']}: {rep['metrics']['seconds_to_contain']} s",
          f"- Closed after: {rep['metrics']['seconds_until_closed']} s", "",
-         "## Summary", rep["summary"], "",
+         "## Summary", rep["summary"], ""]
+    if inc.get("reported"):
+        L += ["## Reported by staff as", f"> {inc['reported']}", ""]
+    L += [
          "## What this replaced",
          f"- Systems acted on: {rep['metrics']['systems_touched']}",
          f"- Steps a person would otherwise have carried out or checked by hand: "

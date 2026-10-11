@@ -274,6 +274,35 @@ def _setup_flags(setup):
     return out
 
 
+# Whose names appear in the output. A caller who tells Rook what their organisation is called,
+# who is away and who can cover gets a plan, checks and an evidence pack in their own words,
+# because every sentence downstream is built from these fields rather than from a fixed script.
+AWAY = (("records", "clinicians", "clin-okafor"), ("schedule", "doctors", "clin-okafor"))
+COVER = (("schedule", "doctors", "clin-bauer"), ("schedule", "doctors", "clin-ndiaye"))
+
+
+def _apply_setup_identity(s, setup):
+    """Put the caller's own organisation, people and words into the state Rook then reads."""
+    name, about = setup.get("organisation"), setup.get("we_do")
+    if name:
+        s["records"]["clinic"] = name
+        # What the care playbooks are scoped to, so a refusal says "belongs to <their name>".
+        s["records"]["scope"] = name
+    if name or about:
+        s["profile"] = {k: v for k, v in (("name", name), ("about", about)) if v}
+    away = setup.get("person_away")
+    if away:
+        for a, b, c in AWAY:
+            s[a][b][c]["name"] = away
+        was = s["directory"]["ident-jdoe"]["name"]       # the person who left, for offboarding
+        s["directory"]["ident-jdoe"]["name"] = away
+        for t in s["pm"]["tickets"].values():
+            t["title"] = t["title"].replace(was, away)
+    for (a, b, c), who in zip(COVER, setup.get("colleagues") or []):
+        s[a][b][c]["name"] = who
+    return s
+
+
 def _apply_seed_flags(s):
     """Flags that describe the world Rook walks into, rather than a fault injected while it works."""
     if s["flags"].get("leak_already_revoked"):
@@ -578,6 +607,10 @@ class Records(Adapter):
     def clinic(self):
         return self.s["records"]["clinic"]
 
+    def scope(self):
+        """What a care incident is about: the organisation, under the name its own staff use."""
+        return self.s["records"].get("scope") or f"clinic:{self.clinic()}"
+
     def orders(self):
         return self.s["records"]["orders"]
 
@@ -799,7 +832,12 @@ class Sandbox:
                 # One transient failure on whichever write this playbook makes first.
                 s["failures"] = dict(s["failures"], **{k: ["transient"] for k in FLAKY_POINTS})
         _apply_seed_flags(s)
+        _apply_setup_identity(s, setup)
         return s
+
+    def profile(self):
+        """How this organisation described itself, or {} if nobody said."""
+        return dict(self.s.get("profile") or {})
 
     def account_service(self, name):
         return {"github": self.github, "cloud": self.cloud, "pm": self.pm_accounts}[name]

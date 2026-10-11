@@ -152,17 +152,32 @@ Care follow-up: `referral_clean`, `referral` (the booking system fails once), `r
 Doctor off sick: `cover_clean` (12 appointments, all moved and everyone told), `cover` (one move fails and is reconciled), `cover_short` (only four slots free, so eight stay open for reception), `cover_half`, `cover_unreachable` (one patient has no working number, so Rook leaves her appointment alone), `cover_nobody_reachable` (Rook moves nobody at all).
 `referral_all_good` is the opposite case: everything the record claims really did happen, so Rook closes it with no actions.
 
-### Situations you describe yourself
+### Your own organisation, in your own words
 
-The scenarios above are written in advance. The dashboard also takes your own numbers, under **Or describe your own situation**, and the API takes them directly:
+The scenarios above are written in advance. You do not have to use them. Under **Tell Rook about
+your own organisation** the dashboard takes your clinic or company name, what you do, who is away,
+who could cover, your numbers, and what you are reporting in your own words. The API takes the
+same thing directly:
 
 ```bash
 curl -X POST https://<your-service>/api/incidents \
   -H 'Authorization: Bearer demo-analyst-token' -H 'Content-Type: application/json' \
-  -d '{"scenario":"cover_clean","setup":{"people_booked_in":7,"cover_slots":2,"people_we_cannot_reach":1,"one_step_fails":true}}'
+  -d '{"scenario":"cover_clean",
+       "reported":"Dr Mensah called in sick. Full list this morning and nobody has told the patients.",
+       "setup":{"organisation":"Riverside Family Practice",
+                "we_do":"Two GP surgeries in Leeds, about 9,000 patients",
+                "person_away":"Dr Kofi Mensah","colleagues":["Dr Ruth Adeyemi","Dr Tom Hale"],
+                "people_booked_in":7,"cover_slots":2,"people_we_cannot_reach":1,"one_step_fails":true}}'
 ```
 
-Rook works the plan, the closure checks and the refusals out from whatever you describe. Every field is bounded and unknown fields are refused, so describing a situation cannot ask the service for data it does not have.
+What comes back is about your organisation: the incident title, every step of the plan, the
+approval requests, the refusals and the evidence pack are written out of what you typed, because
+Rook builds those sentences from the state rather than from a script. Nothing the sandbox invented
+is left in them.
+
+Every field is bounded, text must be plain (no control characters and nothing that reads as
+markup), and unknown fields are refused, so describing your organisation cannot ask the service
+for data it does not have or carry anything but a name into somebody's evidence pack.
 They are listed in `rook/sandbox.py:SCENARIOS`. Failures are injected deterministically per operation.
 
 ## Architecture

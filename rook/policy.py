@@ -55,7 +55,7 @@ def owner_of(sb, a):
         if a.type in CARE_ACTIONS:
             # Scoped to the clinic this incident is about. R10 then pins each action to the patient
             # named on its own record, so one person's care can never be changed under another's.
-            return f"clinic:{sb.records.clinic()}" if _care_record(sb, a.target) else None
+            return sb.records.scope() if _care_record(sb, a.target) else None
     except KeyError:
         return None
 

@@ -658,7 +658,7 @@ KIND_LABEL = {"referral": "referral", "result": "test result", "prescription": "
 
 
 def care_subject(sb):
-    return f"clinic:{sb.records.clinic()}"
+    return sb.records.scope()
 
 
 def _place(h):
@@ -895,7 +895,7 @@ class CareFollowUp:
 
 def cover_subject(sb):
     off = sb.schedule.off_today()
-    return f"clinic:{sb.records.clinic()}" if off else None
+    return sb.records.scope() if off else None
 
 
 def investigate_cover(sb, subject):

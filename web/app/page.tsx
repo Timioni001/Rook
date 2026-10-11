@@ -6,6 +6,23 @@ import {
   reachable, time,
 } from './lib'
 
+// What a person can tell Rook about themselves. Typed once, these names come back in the incident
+// title, in every step of the plan, in the approval prompts and in the evidence pack, because Rook
+// writes those sentences out of them rather than out of anything scripted in advance.
+const ABOUT_YOU = [
+  { key: 'organisation', label: 'Your clinic or company name', hint: 'Riverside Family Practice', max: 60 },
+  { key: 'we_do', label: 'What you do, in one line', hint: 'Two GP surgeries in Leeds, about 9,000 patients', max: 140 },
+]
+// The person at the centre of this kind of problem, in the words each kind would use.
+const PERSON_AWAY: Record<string, { label: string; hint: string }> = {
+  cover: { label: 'The doctor who is off today', hint: 'Dr Kofi Mensah' },
+  care: { label: 'The doctor whose patients these are', hint: 'Dr Lin Wei' },
+  offboarding: { label: 'The person who left', hint: 'Marcus Ngata' },
+}
+const COLLEAGUES: Record<string, string[]> = {
+  cover: ['A colleague who could take some of the list', 'Another colleague who could'],
+}
+
 // Numbers a person can change to describe a situation nobody wrote in advance. Bounds match the API's.
 const SETUP_NUMBERS: Record<string, { key: string; label: string; min: number; max: number }[]> = {
   cover: [
@@ -83,6 +100,7 @@ export default function Page() {
     if (first) setScenario(first.name)
   }
   const [setup, setSetup] = useState<Record<string, any>>({})
+  const [reported, setReported] = useState('')
   const [list, setList] = useState<any[] | null>(null)
   const [id, setId] = useState<string | null>(null)
   const [d, setD] = useState<any>(null)
@@ -112,6 +130,22 @@ export default function Page() {
 
   // On identity switch keep the open incident; if the new identity can't see it, loadIncident clears it.
   useEffect(() => { setD(null); loadList() }, [loadList])
+
+  // Somebody typing out their own clinic should not lose it to a reload or a stray refresh.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('rook-own')
+      if (!raw) return
+      const saved = JSON.parse(raw)
+      if (saved.setup) setSetup(saved.setup)
+      if (saved.reported) setReported(saved.reported)
+      if (saved.playbook) { setPlaybook(saved.playbook); setScenario(saved.scenario || 'cover_clean') }
+    } catch { /* storage unavailable or not ours: start blank */ }
+  }, [])
+  useEffect(() => {
+    try { sessionStorage.setItem('rook-own', JSON.stringify({ setup, reported, playbook, scenario })) }
+    catch { /* ignore */ }
+  }, [setup, reported, playbook, scenario])
 
   // The demo agent runs on a free host that sleeps when nobody is using it, and takes
   // up to a minute to come back. Wait for it instead of leaving an error on the screen.
@@ -167,7 +201,9 @@ export default function Page() {
   async function create() {
     await act(async () => {
       const body: any = { scenario }
-      if (Object.keys(setup).length) body.setup = setup
+      const own = cleanSetup(setup)
+      if (Object.keys(own).length) body.setup = own
+      if (reported.trim()) body.reported = reported.trim()
       const inc = await api(who.token, '/incidents', body)
       setId(inc.id)
     })
@@ -213,7 +249,8 @@ export default function Page() {
         <header className="hero" id="top">
           <div className="hero-copy">
             <h1>Start with a problem. Rook takes it from there.</h1>
-            <p className="lead">Pick one below and watch it work.</p>
+            <p className="lead">Tell Rook about your own clinic or company, or pick a written example. Either way
+              it investigates, proposes, waits for you, then proves what it did.</p>
             <div className="hero-form">
               <span className="mono small">Incident type</span>
               <div className="row playbooks" role="group" aria-label="Incident type">
@@ -232,11 +269,12 @@ export default function Page() {
                 <button className="btn-dark" disabled={busy || !isAnalyst} onClick={create}>{PLAYBOOK_COPY[playbook]?.button}</button>
               </div>
               <p className="small muted">
-                {Object.keys(setup).length
+                {Object.keys(cleanSetup(setup)).length
                   ? <><b>Your own situation.</b> {describeSetup(setup)}</>
                   : scenarios.find((s) => s.name === scenario)?.description}
               </p>
-              <OwnSituation playbook={playbook} setup={setup} onChange={setSetup} />
+              <YourSituation playbook={playbook} setup={setup} onChange={setSetup}
+                reported={reported} onReported={setReported} />
               {me && !isAnalyst && <p className="small muted">{who.label} cannot start incidents.</p>}
             </div>
           </div>
@@ -300,8 +338,15 @@ export default function Page() {
             <section className="section" id="incident">
               <div className="overview">
                 <div>
-                  <p className="mono small muted">{R.playbook?.name} · {R.incident.id} · severity {R.incident.severity} · ticket {R.incident.ticket || 'none'}</p>
+                  <p className="mono small muted">
+                    {R.incident.organisation?.name ? `${R.incident.organisation.name} · ` : ''}
+                    {R.playbook?.name} · {R.incident.id} · severity {R.incident.severity} · ticket {R.incident.ticket || 'none'}
+                  </p>
                   <h2 className="h2">{R.incident.title}</h2>
+                  {R.incident.reported && (
+                    <p className="reported">“{R.incident.reported}”
+                      <span className="small muted"> — as it was reported</span></p>
+                  )}
                   <p className="lead">{R.summary}</p>
                   <div className="row">
                     {isAnalyst && !d.running && ['ready', 'escalated', 'open', 'awaiting_approval'].includes(R.status) && (
@@ -557,6 +602,10 @@ export default function Page() {
 }
 
 const SETUP_WORDS: Record<string, (v: any) => string> = {
+  organisation: (v) => `${v}`,
+  we_do: (v) => `${v}`,
+  person_away: (v) => `${v} is away`,
+  colleagues: (v) => `${v.join(' and ')} can cover`,
   people_booked_in: (v) => `${v} booked in`,
   cover_slots: (v) => `${v} slot${v === 1 ? '' : 's'} free`,
   people_we_cannot_reach: (v) => `${v} we cannot reach`,
@@ -564,41 +613,94 @@ const SETUP_WORDS: Record<string, (v: any) => string> = {
   one_step_fails: () => 'one step will fail once',
 }
 
-function describeSetup(setup: Record<string, any>) {
-  const parts = Object.entries(setup).map(([k, v]) => (SETUP_WORDS[k] ? SETUP_WORDS[k](v) : `${k} ${v}`))
-  return parts.join(', ') + '. Rook works the plan and the checks out from that.'
+// What actually goes to the API: trimmed, blanks dropped, so an empty box means "use the example"
+// rather than an empty name in somebody's evidence pack.
+function cleanSetup(setup: Record<string, any>) {
+  const out: Record<string, any> = {}
+  for (const [k, v] of Object.entries(setup)) {
+    if (Array.isArray(v)) { const list = v.map((x) => String(x).trim()).filter(Boolean); if (list.length) out[k] = list }
+    else if (typeof v === 'string') { const t = v.trim(); if (t) out[k] = t }
+    else if (v !== '' && v !== false && v !== null && v !== undefined) out[k] = v
+  }
+  return out
 }
 
-function OwnSituation({ playbook, setup, onChange }: {
+function describeSetup(setup: Record<string, any>) {
+  const parts = Object.entries(cleanSetup(setup))
+    .map(([k, v]) => (SETUP_WORDS[k] ? SETUP_WORDS[k](v) : `${k} ${v}`))
+  return parts.join(' \u00b7 ') + '. Rook works the plan and the checks out from that.'
+}
+
+function YourSituation({ playbook, setup, onChange, reported, onReported }: {
   playbook: string; setup: Record<string, any>; onChange: (s: Record<string, any>) => void
+  reported: string; onReported: (v: string) => void
 }) {
   const numbers = SETUP_NUMBERS[playbook] || []
   const toggles = [...(SETUP_TOGGLES[playbook] || []), ALWAYS_TOGGLE]
+  const away = PERSON_AWAY[playbook]
+  const colleagues = COLLEAGUES[playbook] || []
   const set = (k: string, v: any) => {
     const next = { ...setup }
     if (v === '' || v === false || v === null) delete next[k]
     else next[k] = v
     onChange(next)
   }
-  const n = Object.keys(setup).length
+  const setColleague = (i: number, v: string) => {
+    const list = [...(setup.colleagues || ['', ''])]
+    list[i] = v
+    set('colleagues', list.some((x) => String(x).trim()) ? list : '')
+  }
+  const n = Object.keys(cleanSetup(setup)).length + (reported.trim() ? 1 : 0)
+  const text = (f: { key: string; label: string; hint: string; max?: number }) => (
+    <label key={f.key} className="own-text">
+      <span className="small">{f.label}</span>
+      <input type="text" value={setup[f.key] ?? ''} placeholder={f.hint} maxLength={f.max || 60}
+        onChange={(e) => set(f.key, e.target.value)} />
+    </label>
+  )
   return (
-    <details className="own">
+    <details className="own" open>
       <summary>
-        <b>Or describe your own situation</b>
-        {n > 0 && <span className="own-count mono">{n} set</span>}
+        <b>Tell Rook about your own organisation</b>
+        {n > 0 && <span className="own-count mono">{n} filled in</span>}
         <span className="howto-chev" aria-hidden="true">+</span>
       </summary>
       <div className="own-body">
-        <p className="small muted">The scenarios above are written in advance. These are not: change the numbers
-          and Rook works out the plan, the checks and the limits for whatever you describe.</p>
+        <p className="small muted">Fill in as much or as little as you like. Whatever you type comes back in the
+          incident, the plan, the approval requests and the evidence pack. Anything you leave blank uses the
+          sandbox&rsquo;s own example instead.</p>
+
+        <span className="own-group mono small">Who you are</span>
+        {ABOUT_YOU.map(text)}
+
+        <label className="own-text">
+          <span className="small">What are you reporting? In your own words.</span>
+          <textarea value={reported} maxLength={300} rows={2} onChange={(e) => onReported(e.target.value)}
+            placeholder="Dr Mensah has just called in sick and we have a full list this morning. Nobody has told the patients yet." />
+          <span className="own-left mono small">{300 - reported.length} characters left</span>
+        </label>
+
+        {(away || colleagues.length > 0) && <span className="own-group mono small">Your people</span>}
+        {away && text({ key: 'person_away', ...away })}
+        {colleagues.map((label, i) => (
+          <label key={label} className="own-text">
+            <span className="small">{label}</span>
+            <input type="text" value={setup.colleagues?.[i] ?? ''} placeholder={i === 0 ? 'Dr Ruth Adeyemi' : 'Dr Tom Hale'}
+              maxLength={60} onChange={(e) => setColleague(i, e.target.value)} />
+          </label>
+        ))}
+
+        {numbers.length > 0 && <span className="own-group mono small">Your numbers</span>}
         {numbers.map((f) => (
           <label key={f.key} className="own-field">
             <span className="small">{f.label}</span>
             <input type="number" min={f.min} max={f.max} inputMode="numeric"
-              value={setup[f.key] ?? ''} placeholder="default"
+              value={setup[f.key] ?? ''} placeholder="example"
               onChange={(e) => set(f.key, e.target.value === '' ? '' : Math.max(f.min, Math.min(f.max, Number(e.target.value))))} />
           </label>
         ))}
+
+        <span className="own-group mono small">Make it harder</span>
         {toggles.map((t) => (
           <label key={t.key} className="own-check">
             <input type="checkbox" checked={!!setup[t.key]} onChange={(e) => set(t.key, e.target.checked)} />
@@ -606,7 +708,9 @@ function OwnSituation({ playbook, setup, onChange }: {
           </label>
         ))}
         {n > 0 && (
-          <button className="btn-outline own-clear" onClick={() => onChange({})}>Back to the written scenario</button>
+          <button className="btn-outline own-clear" onClick={() => { onChange({}); onReported('') }}>
+            Clear and use the written example
+          </button>
         )}
       </div>
     </details>
@@ -616,6 +720,7 @@ function OwnSituation({ playbook, setup, onChange }: {
 function HowToUse() {
   const steps = [
     ['Pick a problem and press the button', 'Each one is a real situation. Start with “A doctor calls in sick”, scenario “cover clean”.'],
+    ['Or put your own organisation in', 'Open “Tell Rook about your own organisation” and type your clinic or company name, who is off, who can cover and what you are reporting. Everything that comes back is written about you.'],
     ['Read what Rook found', 'It has looked across every connected system and changed nothing yet. The Findings say who is affected and why.'],
     ['Press Run plan', 'Watch the Plan and the Timeline. Each step is checked against the system itself before the next one starts.'],
     ['Approve when it stops', 'Rook will not message a patient without a person saying yes. Switch the menu at the top right to Priya (manager) and approve.'],

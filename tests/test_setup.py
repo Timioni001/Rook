@@ -4,11 +4,13 @@ The point of these is that a judge can invent a day nobody scripted and watch Ro
 The point of the bounds is that describing a situation can never become a way to ask the service
 for something it has no data for.
 """
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 from rook.api import DEMO_TOKENS, create_app
 from rook.domain import Principal
-from rook.engine import Engine
+from rook.engine import Engine, evidence_pack
 from rook.sandbox import Sandbox
 from rook.store import Store
 
@@ -101,3 +103,71 @@ def test_describing_a_situation_needs_the_right_role():
         r = c.post("/api/incidents", headers=viewer,
                    json={"scenario": "cover_clean", "setup": {"people_booked_in": 3}})
         assert r.status_code == 403
+
+
+# ---------------------------------------------------------------- a clinic in its own words
+
+OWN = {"organisation": "Riverside Family Practice", "we_do": "Two GP surgeries in Leeds",
+       "person_away": "Dr Kofi Mensah", "colleagues": ["Dr Ruth Adeyemi", "Dr Tom Hale"],
+       "people_booked_in": 4, "cover_slots": 4}
+
+
+def test_the_names_a_clinic_types_are_the_names_it_reads_back():
+    """Nothing the sandbox invented should survive into the output of somebody who named themselves."""
+    st, sb, rep = run(OWN)
+    text = json.dumps(rep) + evidence_pack(rep, st.audit_events(rep["incident"]["id"]), st.verify_chain())
+    assert rep["status"] == "closed_verified"
+    assert "Dr Kofi Mensah is off sick" in rep["incident"]["title"]
+    assert "Riverside Family Practice" in text and "Two GP surgeries in Leeds" in text
+    for typed in ("Dr Kofi Mensah", "Dr Ruth Adeyemi"):
+        assert typed in text
+    for invented in ("Ada Okafor", "Jonas Bauer", "Awa Ndiaye", "northside"):
+        assert invented not in text, invented
+
+
+def test_naming_the_organisation_does_not_loosen_who_owns_what():
+    """The name is only a name: care actions are still scoped to it, and the scope still has to match."""
+    st, sb, rep = run(OWN)
+    assert rep["incident"]["subject"] == "Riverside Family Practice"
+    assert all(a["policy"]["rule"] != "R2-ownership" for a in rep["actions"])
+    assert sb.records.scope() == "Riverside Family Practice"
+    plain = Sandbox(Store(":memory:"), scenario="cover_clean")
+    assert plain.records.scope() == "clinic:northside"      # unnamed organisations are unchanged
+
+
+def test_what_staff_reported_is_kept_in_their_words_and_proved():
+    said = "Dr Mensah called in sick. Full list this morning and nobody has told the patients."
+    with TestClient(app()) as c:
+        made = c.post("/api/incidents", headers=H,
+                      json={"scenario": "cover_clean", "reported": said, "setup": OWN}).json()
+        rep = c.get(f"/api/incidents/{made['id']}", headers=H).json()["report"]
+        assert rep["incident"]["reported"] == said
+        assert rep["incident"]["organisation"] == {"name": OWN["organisation"], "about": OWN["we_do"]}
+        pack = c.get(f"/api/incidents/{made['id']}/evidence", headers=H).text
+        assert said in pack
+        assert "- Organisation: Riverside Family Practice -- Two GP surgeries in Leeds" in pack
+
+
+def test_a_name_is_only_ever_a_name():
+    """Typed text is bounded and plain, so it cannot carry markup or control characters anywhere."""
+    with TestClient(app()) as c:
+        for bad in ({"organisation": "<script>alert(1)</script>"}, {"organisation": "   "},
+                    {"organisation": "x" * 61}, {"we_do": "y" * 141}, {"person_away": "a\x00b"},
+                    {"colleagues": ["a", "b", "c"]}, {"colleagues": [""]}, {"organisation": "back`tick"}):
+            r = c.post("/api/incidents", headers=H, json={"scenario": "cover_clean", "setup": bad})
+            assert r.status_code == 422, (bad, r.status_code)
+        for bad in ("<b>hi</b>", "x" * 301):
+            r = c.post("/api/incidents", headers=H, json={"scenario": "cover_clean", "reported": bad})
+            assert r.status_code == 422, bad
+
+
+def test_a_business_that_is_not_a_clinic_gets_its_own_words_too():
+    """The same fields on an infrastructure incident: the person who left is whoever they say."""
+    with TestClient(app()) as c:
+        made = c.post("/api/incidents", headers=H, json={
+            "scenario": "clean",
+            "setup": {"organisation": "Lakeside Logistics", "person_away": "Marcus Ngata"}}).json()
+        assert "Marcus Ngata" in made["title"]
+        rep = c.get(f"/api/incidents/{made['id']}", headers=H).json()["report"]
+        assert "Marcus Ngata" in rep["incident"]["findings"][0]["text"]
+        assert "Jordan Doe" not in json.dumps(rep)

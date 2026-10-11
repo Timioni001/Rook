@@ -15,7 +15,7 @@ from typing import Literal, Optional
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from . import obs
 from .domain import Principal
 from .engine import Engine, RunInProgress, evidence_pack
@@ -40,24 +40,61 @@ DEMO_TOKENS = {
 ScenarioName = Literal[tuple(SCENARIOS)]
 
 
+# Names and descriptions a person types. Letters in any script, digits, spaces and ordinary
+# punctuation; no control characters and nothing that reads as markup, so a name is only ever
+# a name wherever it is later printed.
+NOT_PLAIN = re.compile(r"[\x00-\x1f\x7f<>{}\\|`$]")
+
+
+def plain(v: str) -> str:
+    v = " ".join(v.split())                # one line, no runs of whitespace
+    if not v:
+        raise ValueError("cannot be blank")
+    if NOT_PLAIN.search(v):
+        raise ValueError("must be plain text: letters, numbers, spaces and ordinary punctuation")
+    return v
+
+
 class Setup(BaseModel):
     """A situation described by whoever is using Rook, rather than one of the scripted ones.
 
-    Every field is bounded, so a caller can describe a hard day but cannot ask the sandbox for
-    something it has no data for. Unknown fields are refused outright.
+    The first fields are who they are, so the plan, the checks and the evidence pack come back
+    in their own words. The rest describe the day. Every field is bounded, so a caller can
+    describe a hard day but cannot ask the sandbox for something it has no data for. Unknown
+    fields are refused outright.
     """
     model_config = ConfigDict(extra="forbid")
+    organisation: Optional[str] = Field(default=None, max_length=60)
+    we_do: Optional[str] = Field(default=None, max_length=140)
+    person_away: Optional[str] = Field(default=None, max_length=60)
+    colleagues: Optional[list[str]] = Field(default=None, max_length=2)
     people_booked_in: Optional[int] = Field(default=None, ge=1, le=12)
     cover_slots: Optional[int] = Field(default=None, ge=0, le=12)
     people_we_cannot_reach: Optional[int] = Field(default=None, ge=0, le=12)
     one_result_is_urgent: bool = False
     one_step_fails: bool = False
 
+    @field_validator("organisation", "we_do", "person_away")
+    @classmethod
+    def _plain(cls, v):
+        return v if v is None else plain(v)
+
+    @field_validator("colleagues")
+    @classmethod
+    def _plain_each(cls, v):
+        return v if v is None else [plain(x)[:60] for x in v]
+
 
 class CreateIncident(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario: ScenarioName = "signature"
     setup: Optional[Setup] = None
+    reported: str = Field(default="", max_length=300)   # what staff typed when they raised it
+
+    @field_validator("reported")
+    @classmethod
+    def _plain_note(cls, v):
+        return plain(v) if v.strip() else ""
 
 
 class RejectBody(BaseModel):
@@ -213,11 +250,13 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
             setup = body.setup.model_dump(exclude_none=True, exclude_defaults=True) if body.setup else None
             sb.reset(scenario=body.scenario, setup=setup)
             try:
-                inc = Engine(store, sb).start(org=p.org, created_by=p.id, scenario=body.scenario)
+                inc = Engine(store, sb).start(org=p.org, created_by=p.id, scenario=body.scenario,
+                                              reported=body.reported)
             except ValueError as e:
                 # e.g. a situation with nothing in it for this playbook to investigate
                 raise HTTPException(422, str(e))
-        return {"id": inc.id, "status": inc.status, "title": inc.title, "setup": setup}
+        return {"id": inc.id, "status": inc.status, "title": inc.title, "setup": setup,
+                "organisation": inc.organisation}
 
     @app.get("/api/incidents/{iid}")
     def get(iid: str, p: Principal = Depends(limited)):
