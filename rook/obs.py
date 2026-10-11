@@ -148,6 +148,17 @@ class _Span:
         self._raw(**{"neatlogs.tool.name": name, "neatlogs.tool.description": description,
                      "neatlogs.tool.parameters": json.dumps(parameters)})
 
+    def io(self, input=None, output=None):
+        """The flat input.value / output.value pair the neatlogs UI shows as the opening message
+        and the last reply. Without them a session renders as empty and reads as incomplete."""
+        kw = {}
+        if input is not None:
+            kw["input.value"] = input
+        if output is not None:
+            kw["output.value"] = output
+        if kw:
+            self._raw(**kw)
+
     def retriever(self, query, documents):
         self._raw(**{"neatlogs.retriever.query": query, "neatlogs.retriever.top_k": len(documents),
                      **{f"neatlogs.retriever.documents.{i}": d for i, d in enumerate(documents)}})

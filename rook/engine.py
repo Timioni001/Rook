@@ -170,6 +170,7 @@ class Engine:
         pb = playbook_for(scenario, playbook)
         with span("incident.start", session=iid, user=created_by, user_meta={"org": org},
                   incident=iid, org=org, scenario=scenario or "", playbook=pb.key) as root:
+            root.io(input=f"{pb.name}: {pb.trigger.lower()}" + (f" ({scenario})" if scenario else ""))
             if subject is None:                       # trigger: the playbook's own (ticket, alert, ...)
                 subject = pb.find_subject(self.sb)
                 if subject is None:
@@ -206,6 +207,8 @@ class Engine:
                 plan = planner.plan(rel, iid) + list(extra_actions)
                 plan = enforce_order(plan)
                 sp.set(actions=len(plan), planner=type(planner).__name__)
+            root.io(output=f"{inc.title}. Planned {len(plan)} step(s) and defined {len(conds)} "
+                           "check(s) that must pass before this can be called done. Nothing changed yet.")
             # stable ids in execution order; references rewritten accordingly
             rename = {a.id: f"{iid}-a{i+1}" for i, a in enumerate(plan)}
             seen = set()
@@ -247,6 +250,8 @@ class Engine:
                   incident=iid, action=action_id, approver=principal.id) as sp:
             decision, reason, rule = policy.decide(a, inc, self.sb, self.store.actions(iid), approval=approval)
             sp.set(decision=decision)
+            sp.io(input=f"{principal.id} asks to approve: {a.summary or a.type + ' ' + a.target}",
+                  output=f"{decision}. {reason}")
             sp.guardrail(f"approve {a.type} {a.target} by {principal.id}", decision == "authorized", reason)
         if decision == "authorized":
             a.move(S.authorized)
@@ -305,6 +310,7 @@ class Engine:
                                                                   "in_flight": inflight})
             inc.status = IS.remediating.value
             self.store.save_incident(inc)
+            root.io(input=f"{inc.title}. Working {len(acts)} planned step(s).")
             while steps < self.max_steps and not self.cancelled:
                 acts = self.store.actions(iid)
                 by_id = {a.id: a for a in acts}
@@ -351,6 +357,14 @@ class Engine:
                 self.store.audit(iid, "cancelled", {})
             rep = self.finalize(iid)
             root.set(status=rep["status"], steps=steps)
+            passed = sum(c["result"] is True for c in rep["conditions"])
+            verdict = {"closed_verified": "Closed, with every check passing on the live systems",
+                       "escalated": "Escalated to a person rather than claimed as done",
+                       "awaiting_approval": "Paused, waiting for a person to approve a step"}
+            root.io(output=f"{verdict.get(rep['status'], rep['status'])}. "
+                           f"{passed}/{len(rep['conditions'])} checks passed, "
+                           f"{sum(a['status'] == 'verified' for a in rep['actions'])}/{len(rep['actions'])} "
+                           f"steps verified. {rep['summary']}")
             return rep
 
     def _step(self, a):
