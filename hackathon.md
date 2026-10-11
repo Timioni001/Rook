@@ -6,7 +6,7 @@ Times are UTC. The event started 2026-10-10 07:00 UTC, and the deadline is 2026-
 
 **07:38–07:48: first version uploaded (17 commits).** This was a credential-offboarding agent with a state machine, idempotent sandbox, crash recovery, verification and 22 passing tests.
 
-**08:02: neatlogs tracing and a measurable baseline (`0817443`).**
+**08:02: neatlogs tracing and a measurable baseline (`c2e097d`).**
 - `obs.span()` now emits neatlogs/OpenTelemetry spans with redacted attributes.
 - `python -m rook.demo` probes dependent health after every step. The baseline showed that the original order (rotate, then repair) broke billing-app for 3 steps in the transient scenario and left it broken under persistent failure.
 
@@ -99,7 +99,7 @@ Asked about a React Native component library for the visuals. It cannot be used:
 **05:10: the two partner tools that were still stubs.**
 
 - **cfo.ai**: wrote the input sheet. Every line is labelled measured, benchmark or assumption, so a reader can attack the assumptions rather than the arithmetic. Pricing is set at 58% of measured value for a standard clinic rather than at the ceiling. Cost to serve is ~$27/customer/month at ~90% gross margin, and the unusual line is real: **zero inference cost**, because ordering, policy and verification are deterministic code rather than a model. Break-even is 22 clinics, reached in month 8 on the assumed ramp. The honest finding is the headroom: the plan survives $30,000 of starting capital with **$2,320 to spare in its worst month**, so the month of first revenue and CAC are the only two assumptions that really matter. Checked the arithmetic in a script rather than by eye, which caught two wrong numbers in the first draft.
-- **neatlogs**: `ingest.neatlogs.com` answers 401 rather than refusing the connection, so the host was never the problem; only the key is missing. `scripts/neatlogs-evidence.sh` now produces the whole evidence set in one command: the two "before" runs from a git worktree at `0817443`, then every playbook as it is now, labelled so the dashboard can filter them apart. Verified end to end without a key: both versions run on the same virtual environment and reproduce the documented numbers exactly, 3 and 6 steps with a dependent broken before, 0 after.
+- **neatlogs**: `ingest.neatlogs.com` answers 401 rather than refusing the connection, so the host was never the problem; only the key is missing. `scripts/neatlogs-evidence.sh` now produces the whole evidence set in one command: the two "before" runs from a git worktree at `c2e097d`, then every playbook as it is now, labelled so the dashboard can filter them apart. Verified end to end without a key: both versions run on the same virtual environment and reproduce the documented numbers exactly, 3 and 6 steps with a dependent broken before, 0 after.
 - Measured per-playbook span volume with an in-memory exporter: 20 to 130 spans per incident, mean 52. That is the number the cost model is built on, rather than a guess.
 
 **Day two: from one product to four industries.**

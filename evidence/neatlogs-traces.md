@@ -44,9 +44,9 @@ Detections and Alerts are configured in the neatlogs dashboard, not in code. Two
 
 The change: the original agent rotated the key (revoking the old one) and only then repaired the app. The current agent issues a replacement, moves every dependent, verifies each one and only then revokes. `probe.dependent_health` runs after every workflow step and records whether a dependent was broken.
 
-Measured with `python -m rook.demo`, running commit `0817443` for before and the current branch for after. Raw JSON is in [runs/](runs/):
+Measured with `python -m rook.demo`, running commit `c2e097d` for before and the current branch for after. Raw JSON is in [runs/](runs/):
 
-| Scenario | Before (`0817443`) | After | Re-measured |
+| Scenario | Before (`c2e097d`) | After | Re-measured |
 |---|---|---|---|
 | One transient failure | closed, **3 steps with billing-app down** | closed, **0 steps with any dependent down** | yes, 2026-10-11 |
 | Persistent failure | left **open** with billing-app broken for **6 steps**, old key revoked, repair failed | escalated with **0 steps down**: revocation never ran | yes, 2026-10-11 |
@@ -84,7 +84,7 @@ read -rs NEATLOGS_API_KEY && export NEATLOGS_API_KEY   # not echoed, not written
 ./scripts/neatlogs-evidence.sh
 ```
 
-It runs the two "before" scenarios from a git worktree at `0817443` and every playbook as it is
+It runs the two "before" scenarios from a git worktree at `c2e097d` and every playbook as it is
 now, labelled `before` and `after`. The working tree is never checked out or modified. Both
 versions run on the same virtual environment, because the dependencies did not change.
 

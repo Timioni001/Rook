@@ -145,7 +145,7 @@ Everything below runs in an **Ubuntu terminal on WSL**. It was written for Ubunt
 4. **Check:** each demo prints `"status": "closed_verified"` and `"span_export_failures": 0`. In the neatlogs dashboard, under **Traces** or **Sessions**, a trace for workflow `rook-incident-response` appears within a few seconds. Open it and you'll see guardrail spans showing Passed/Blocked and tool spans for each adapter call.
 5. **Before/after evidence**, for the submission:
    ```bash
-   git stash -u 2>/dev/null; git checkout 0817443
+   git stash -u 2>/dev/null; git checkout c2e097d
    ROOK_DEMO_LABEL=before python -m rook.demo --scenario transient
    ROOK_DEMO_LABEL=before python -m rook.demo --scenario persistent
    git checkout keywarden-build-v7m54f

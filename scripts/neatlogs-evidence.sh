@@ -6,7 +6,7 @@
 #
 # It sends two traces from the agent as it was before the remediation order was fixed, then one
 # from each playbook as it is now, and prints the delivery counters so you can see they arrived.
-# The "before" runs come from a git worktree at 0817443, so your working tree is never touched.
+# The "before" runs come from a git worktree at c2e097d, so your working tree is never touched.
 #
 # Without a key it still runs everything and prints the measured numbers; only the export is off.
 set -euo pipefail
@@ -17,7 +17,7 @@ root=$(pwd)
 
 PY=python3
 [[ -x "$root/.venv/bin/python" ]] && PY="$root/.venv/bin/python"
-BEFORE_COMMIT="${BEFORE_COMMIT:-0817443}"
+BEFORE_COMMIT="${BEFORE_COMMIT:-c2e097d}"
 WORK="${TMPDIR:-/tmp}/rook-before-$$"
 
 note() { printf '\n==> %s\n' "$*"; }
