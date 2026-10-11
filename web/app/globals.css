@@ -30,7 +30,16 @@ code { font-family: var(--mono); word-break: break-word }
 .nav-links { display: flex; gap: 22px; margin-left: auto; font-family: var(--mono); font-size: 13px }
 .nav-links a { text-decoration: none } .nav-links a:hover { text-decoration: underline; text-decoration-color: var(--lime); text-decoration-thickness: 3px }
 .who select { border-radius: 12px; font-family: var(--mono); font-size: 13px; min-width: 230px }
-@media (max-width: 760px) { .nav-links { display: none } .who { margin-left: auto } }
+/* On a phone the report is long, so the jump links matter more, not less: they move under the
+   bar and scroll sideways rather than disappearing. */
+@media (max-width: 760px) {
+  .nav { flex-wrap: wrap; row-gap: 10px }
+  .who { margin-left: auto }
+  .nav-links { order: 3; width: 100%; margin-left: 0; gap: 16px; overflow-x: auto; padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none }
+  .nav-links::-webkit-scrollbar { display: none }
+  .nav-links a { white-space: nowrap; padding: 2px 0 }
+}
 @media (max-width: 480px) { .who, .who select { width: 100%; min-width: 0 } }
 .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 32px; align-items: start; padding: 36px 0 24px }
 .hero h1 { font-size: clamp(32px, 4.6vw, 52px); line-height: 1.08; letter-spacing: -.02em; margin: 0 0 14px; font-weight: 500 }
