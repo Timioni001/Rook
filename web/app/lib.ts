@@ -11,7 +11,7 @@ export const IDENTITIES: Identity[] = [
   { key: 'viewer', token: 'demo-viewer-token', label: 'Lee · read only', who: 'Lee Marsh', role: 'Read only',
     can: 'Watch an incident and read the evidence. Cannot start or approve anything.' },
   { key: 'other', token: 'demo-other-org-token', label: 'Eve · a different company', who: 'Eve Dubois',
-    role: 'Another company', can: 'Sees what an outsider sees, which is nothing: incidents here return 404 to her.' },
+    role: 'Another company', can: 'Sees what an outsider sees, which is nothing: incidents here return 404 to them.' },
 ]
 
 export class ApiError extends Error {

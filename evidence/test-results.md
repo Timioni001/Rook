@@ -4,11 +4,11 @@ Three layers, all run on 2026-10-11 against this commit: the unit and integratio
 HTTP route exercised through the real Cloudflare Workers proxy, and every playbook driven in a
 real browser. Each section says how to reproduce it.
 
-## 1. The suite: 225 passed
+## 1. The suite: 265 passed
 
 ```
 python -m pytest -q
-225 passed, 1 warning in 8.6s        # Python 3.13; the warning is Starlette's test client
+265 passed, 1 warning in 8.6s        # Python 3.13; the warning is Starlette's test client
 ```
 
 | File | Tests | What it covers |

@@ -746,7 +746,7 @@ def care_findings(rel, info):
         if h["finished"]:
             out.append({"severity": "info",
                         "text": f"{h['patient_name']}'s {label} really did happen. The {_place(h)} has it, "
-                                "the appointment exists and she has replied. Rook checked and will not touch it.",
+                                "the appointment exists and the patient has replied. Rook checked and will not touch it.",
                         "evidence": {"order": h["order"]}})
             continue
         out.append({"severity": "high",
@@ -829,8 +829,8 @@ class CareFollowUp:
                                  patient=h["patient"], channel=h["channel"]["kind"],
                                  value=h["channel"]["value"], risk="medium",
                                  summary=f"Tell {h['patient_name']} what has been arranged, by "
-                                         f"{h['channel']['kind']} on the {h['channel']['value']}, which is the one "
-                                         "she still uses."))
+                                         f"{h['channel']['kind']} on the {h['channel']['value']}, the one that still "
+                                         "works."))
             if steps:
                 add("close_loop", oid, [x.id for x in steps], service="records", patient=h["patient"],
                     summary=f"Mark {oid} finished in the record, and only once everywhere else agrees it is.")

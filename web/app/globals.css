@@ -312,54 +312,165 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .own-check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--ink); flex: 0 0 auto }
 .own-clear { justify-self: start; margin-top: 2px }
 
-/* ---------------------------------------------------------------- the landing page */
-.land .frame { padding-bottom: 8px }
-.land-nav { position: sticky; top: 0; z-index: 20; background: var(--paper); border-bottom: 1.5px solid var(--line) }
-/* The base control styles only cover <button> and <select>; these CTAs are links. */
-.land a.btn-dark, .land a.btn-outline { display: inline-flex; align-items: center; justify-content: center;
-  min-height: 44px; border-radius: 12px; border: 1.5px solid var(--ink); font-family: var(--mono);
-  font-size: 14px; text-decoration: none }
-.land a.btn-outline { background: var(--paper); color: var(--ink) }
-.land a.btn-outline:hover { background: var(--soft) }
-.land-cta { margin-left: auto; padding: 9px 20px }
-.land-hero { padding: 54px 0 28px; max-width: 54rem }
-.land-kicker { letter-spacing: .06em; text-transform: uppercase; opacity: .6; margin-bottom: 14px }
-.land-hero h1 { font-size: clamp(38px, 6.2vw, 72px); line-height: 1.03; letter-spacing: -.025em; font-weight: 700; margin: 0 0 20px }
-.land-hero h1 mark { background: var(--lime); padding: 0 .08em }
-.land-hero .lead { font-size: clamp(17px, 2vw, 21px); max-width: 44rem }
-.land-actions { margin: 26px 0 14px; gap: 12px }
-.land-actions a { text-decoration: none; padding: 13px 26px; font-size: 16px }
-.land-shot { display: grid; gap: 10px; justify-items: center }
-.land-shot img { width: 100%; max-width: 860px; height: auto; border: 2.5px solid var(--ink); border-radius: 16px;
-  box-shadow: 12px 12px 0 var(--lime) }
-.land-h { margin-bottom: 18px }
-.land-how { grid-template-columns: repeat(4, 1fr) }
-.land-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px }
-.land-grid-3 { grid-template-columns: repeat(3, 1fr) }
-.land-card { display: grid; gap: 6px; align-content: start }
-.land-card b { font-size: 17px }
-.land-stats { grid-template-columns: repeat(4, 1fr); margin-top: 18px }
-.land-stats .stat { display: grid; gap: 4px; border: 2px solid var(--ink); border-radius: 16px; padding: 16px 18px; background: var(--paper) }
-.land-stats .stat b { font-size: 34px; line-height: 1.05 }
-.land-form-card { max-width: 44rem; display: grid; gap: 6px }
-.land-form { display: grid; gap: 16px; margin-top: 16px }
-.land-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
-.land-chips { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
-.land-chips legend { float: left; width: 100%; margin-bottom: 8px; color: var(--muted, #5c5a54) }
-.land-chips .chip { cursor: pointer }
-.land-submit { justify-self: start; padding: 13px 28px; font-size: 16px }
-.land-done { max-width: 44rem; display: grid; gap: 8px }
-.land-foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between }
-.land-foot a { color: inherit }
-@media (max-width: 880px) {
-  .land-how { grid-template-columns: 1fr 1fr }
-  .land-grid, .land-grid-3, .land-two { grid-template-columns: 1fr }
-  .land-stats { grid-template-columns: 1fr 1fr }
+/* ---------------------------------------------------------------- the landing page
+   Full-bleed sections on white, one dark band for the hero, the product's own screens as the
+   pictures. Same ink, lime and type as the demo, so opening the demo does not feel like a jump. */
+.lp { background: var(--paper); color: var(--ink); min-height: 100vh }
+.lp-wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px }
+:where(.lp) a { color: inherit }   /* :where keeps this below the button colours */
+.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px;
+  padding: 10px 18px; border-radius: 12px; font-family: var(--mono); font-size: 14px; font-weight: 700;
+  text-decoration: none; border: 1.5px solid transparent; white-space: nowrap; cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, background .15s ease }
+.lp-btn:hover { transform: translateY(-1px) }
+.lp-btn-lg { min-height: 52px; padding: 14px 26px; font-size: 15.5px }
+.lp-btn-lime { background: var(--lime); color: var(--ink); border-color: var(--lime) }
+.lp-btn-lime:hover { box-shadow: 0 6px 24px rgba(185,255,102,.35) }
+.lp-btn-dark { background: var(--ink); color: #fff; border-color: var(--ink) }
+.lp-btn-ghost { background: transparent; color: inherit; border-color: currentColor }
+.lp-btn:disabled { opacity: .6; cursor: default; transform: none }
+
+.lp-nav { position: sticky; top: 0; z-index: 30; background: rgba(13,13,13,.86); color: #fff;
+  backdrop-filter: saturate(160%) blur(12px); -webkit-backdrop-filter: saturate(160%) blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,.08) }
+.lp-nav-in { display: flex; align-items: center; gap: 14px; min-height: 64px }
+.lp-nav .brand { color: #fff; margin-right: 8px }
+.lp-links { display: flex; gap: 26px; margin: 0 auto 0 18px; font-size: 14.5px }
+.lp-links a { text-decoration: none; opacity: .75 } .lp-links a:hover { opacity: 1 }
+
+.lp-hero { background: #0d0d0d; color: #fff; padding: 64px 0 0; overflow: hidden; position: relative;
+  background-image: radial-gradient(60rem 30rem at 70% 105%, rgba(185,255,102,.22), transparent 60%),
+    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: auto, 44px 44px, 44px 44px }
+.lp-kicker { color: var(--lime); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 18px }
+.lp-hero h1 { font-size: clamp(38px, 5.2vw, 66px); line-height: 1.02; letter-spacing: -.032em; margin: 0;
+  max-width: 21ch; font-weight: 700; text-wrap: balance }
+.lp-hero h1 mark { background: none; color: var(--lime); padding: 0 }
+.lp-sub { font-size: clamp(17px, 1.7vw, 20px); line-height: 1.55; color: #c9c9c9; max-width: 42rem; margin: 22px 0 0 }
+.lp-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 32px 0 12px }
+.lp-hero .lp-btn-ghost { color: #fff; border-color: rgba(255,255,255,.35) }
+.lp-note { font-size: 13.5px; color: #8f8f8f; margin: 0 }
+.lp-window { margin: 44px 0 0; border-radius: 16px 16px 0 0; overflow: hidden; background: #fff;
+  border: 1px solid rgba(255,255,255,.14); border-bottom: 0; box-shadow: 0 -10px 80px rgba(185,255,102,.18) }
+.lp-window-bar { display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; background: #f3f3f1;
+  border-bottom: 1px solid var(--line) }
+.lp-window-bar i { width: 11px; height: 11px; border-radius: 50%; background: #d6d6d2 }
+.lp-window-bar span { margin-left: 12px; font-size: 12px; color: #7a7a7a }
+.lp-window img { display: block; width: 100%; height: auto; padding: 22px 26px 0; background: #fff }
+
+.lp-tools { border-bottom: 1px solid var(--line); background: var(--paper) }
+.lp-tools-in { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 28px; padding: 22px 24px;
+  font-size: 13px; color: var(--mute) }
+.lp-tools b { color: var(--ink) }
+
+.lp-sec { padding: 104px 0 }
+.lp-alt { background: #f6f6f3 }
+.lp-eyebrow { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); margin: 0 0 12px }
+.lp-h2 { font-size: clamp(30px, 4vw, 48px); line-height: 1.06; letter-spacing: -.025em; margin: 0 0 40px; max-width: 22ch; text-wrap: balance }
+.lp-p { font-size: 17px; line-height: 1.6; color: #3d3d3d; max-width: 38rem; margin: 0 0 24px }
+
+.lp-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 5px; border-radius: 14px; background: #f0f0ed; margin-bottom: 28px }
+.lp-tabs button { border: 0; min-height: 42px; padding: 9px 18px; border-radius: 10px; background: transparent;
+  font: 600 15px var(--sans); color: var(--mute); cursor: pointer }
+.lp-tabs button.on { background: var(--ink); color: #fff }
+.lp-tabs button:not(.on):hover { color: var(--ink) }
+.lp-panel { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 48px; align-items: start }
+.lp-when { display: inline-block; background: var(--lime); border-radius: 999px; padding: 3px 12px; font-size: 12.5px }
+.lp-problem { font-size: 23px; line-height: 1.35; letter-spacing: -.01em; font-weight: 600; margin: 16px 0 26px }
+.lp-label { font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); margin: 0 0 10px }
+.lp-did { margin: 0 0 22px; padding: 0; list-style: none; counter-reset: did; display: grid; gap: 12px }
+.lp-did li { counter-increment: did; position: relative; padding-left: 38px; font-size: 16px; line-height: 1.5; color: #333 }
+.lp-did li::before { content: counter(did); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--ink); color: #fff; font: 700 12.5px/26px var(--mono); text-align: center }
+.lp-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 28px; padding: 0; list-style: none }
+.lp-facts li { border: 1.5px solid var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 12.5px }
+.lp-panel-shot { margin: 0; border-radius: 18px; border: 1px solid var(--line); background: var(--paper);
+  padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 18px 50px rgba(0,0,0,.08) }
+.lp-panel-shot img { display: block; width: 100%; height: auto; border-radius: 10px; animation: lp-in .35s ease }
+.lp-panel-shot figcaption { font-size: 12px; color: var(--mute); margin: 12px 4px 2px }
+@keyframes lp-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+
+.lp-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+  border-top: 2px solid var(--ink) }
+.lp-steps li { padding: 26px 26px 0 0; display: grid; gap: 10px; align-content: start }
+.lp-steps li + li { padding-left: 26px; border-left: 1px solid #dcdcd8 }
+.lp-step-n { font-size: 13px; color: var(--mute) }
+.lp-steps b { font-size: 21px; letter-spacing: -.01em }
+.lp-steps p { margin: 0; font-size: 15.5px; line-height: 1.55; color: #444 }
+.lp-steps li:last-child b { background: var(--lime); justify-self: start; padding: 0 6px; border-radius: 6px }
+
+.lp-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px }
+.lp-card { display: grid; gap: 10px; align-content: start; padding: 28px; border-radius: 18px; background: var(--paper);
+  border: 1.5px solid var(--ink); box-shadow: var(--shadow); text-decoration: none }
+.lp-card b { font-size: 19px; line-height: 1.3; letter-spacing: -.01em }
+.lp-card p { margin: 0; font-size: 15.5px; line-height: 1.55; color: #444 }
+.lp-card-link { transition: transform .15s ease, box-shadow .15s ease }
+.lp-card-link:hover { transform: translateY(-3px); box-shadow: 0 8px 0 var(--ink) }
+.lp-tag { justify-self: start; background: var(--ink); color: var(--lime); border-radius: 6px; padding: 2px 8px; font-size: 12px }
+.lp-more { font-size: 13px; margin-top: 4px }
+.lp-stats { display: grid; grid-template-columns: repeat(4, 1fr); margin: 56px 0 0; border-top: 1px solid #dcdcd8 }
+.lp-stats div { padding: 26px 24px 0 0 }
+.lp-stats div + div { padding-left: 24px; border-left: 1px solid #dcdcd8 }
+.lp-stats dt { font-size: clamp(34px, 4vw, 48px); font-weight: 700; letter-spacing: -.03em; line-height: 1 }
+.lp-stats dd { margin: 10px 0 0; font-size: 14.5px; color: var(--mute); line-height: 1.45 }
+
+.lp-split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 56px; align-items: center }
+.lp-split .lp-h2 { margin-bottom: 20px }
+.lp-shot { width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 24px 60px rgba(0,0,0,.10) }
+
+.lp-cta { background: #0d0d0d; color: #fff }
+.lp-cta-in { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center }
+.lp-cta .lp-eyebrow { color: var(--lime) }
+.lp-cta .lp-h2 { margin-bottom: 16px }
+.lp-cta .lp-p { color: #bdbdbd; margin: 0 }
+.lp-cta .lp-p a { color: var(--lime) }
+.lp-form { display: grid; gap: 18px }
+.lp-form-row { display: flex; gap: 10px }
+.lp-form-row input { flex: 1; min-width: 0; min-height: 52px; border-radius: 12px; border: 1px solid #3a3a3a;
+  background: #161616; color: #fff; font: inherit; font-size: 16px; padding: 0 16px }
+.lp-form-row input::placeholder { color: #777 }
+.lp-form-row .lp-btn { min-height: 52px; padding: 0 22px }
+.lp-chips { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px }
+.lp-chips legend { float: left; width: 100%; font-size: 12.5px; color: #9a9a9a; margin-bottom: 10px }
+.lp-chips legend i { opacity: .7 }
+.lp-chips button { min-height: 38px; border-radius: 999px; padding: 6px 14px; background: transparent; color: #ddd;
+  border: 1px solid #3a3a3a; font: 500 14px var(--sans); cursor: pointer }
+.lp-chips button.on { background: var(--lime); color: var(--ink); border-color: var(--lime) }
+.lp-err { color: #ffb4aa; margin: 0 }
+
+.lp-foot { background: #0d0d0d; color: #8f8f8f; border-top: 1px solid #222 }
+.lp-foot-in { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 28px 24px; font-size: 13px }
+.lp-foot-in span:first-child { display: inline-flex; align-items: center; gap: 8px }
+.lp-foot-in a { margin-left: 22px; text-decoration: none } .lp-foot-in a:hover { color: #fff }
+
+@media (max-width: 960px) {
+  .lp-links { display: none }
+  .lp-nav-in { justify-content: space-between } .lp-nav .lp-btn-ghost { margin-left: auto }
+  .lp-panel, .lp-split, .lp-cta-in { grid-template-columns: 1fr; gap: 32px }
+  .lp-steps { grid-template-columns: 1fr 1fr; row-gap: 28px }
+  .lp-steps li:nth-child(3) { border-left: 0; padding-left: 0 }
+  .lp-cards { grid-template-columns: 1fr }
+  .lp-stats { grid-template-columns: 1fr 1fr; row-gap: 28px }
+  .lp-stats div:nth-child(3) { border-left: 0; padding-left: 0 }
+  .lp-sec { padding: 72px 0 }
 }
-@media (max-width: 480px) {
-  .land-how { grid-template-columns: 1fr }
-  .land-actions a { width: 100%; text-align: center }
+@media (max-width: 560px) {
+  .lp-wrap { padding: 0 16px }
+  .lp-hide-sm { display: none }
+  .lp-hero { padding-top: 52px }
+  .lp-actions .lp-btn { width: 100% }
+  .lp-window { margin-top: 40px }
+  .lp-tools-in { padding: 18px 16px; flex-direction: column }
+  .lp-tabs { display: grid; grid-template-columns: 1fr 1fr; width: 100% }
+  .lp-problem { font-size: 20px }
+  .lp-steps { grid-template-columns: 1fr }
+  .lp-steps li, .lp-steps li + li { padding-left: 0; border-left: 0 }
+  .lp-stats div, .lp-stats div + div { padding-left: 0; border-left: 0 }
+  .lp-form-row { flex-direction: column }
+  .lp-foot-in a { margin: 0 18px 0 0 }
 }
+@media (prefers-reduced-motion: reduce) { .lp-btn, .lp-card-link, .lp-panel-shot img { transition: none; animation: none } }
 
 /* the demo's own bar, so a visitor can get back to the site */
 .demo-back { text-decoration: none; font-family: var(--mono); font-size: 13px; white-space: nowrap }
@@ -381,12 +492,3 @@ th { font: 700 12px var(--mono); text-transform: uppercase; color: var(--mute) }
 .who-card .mono { opacity: .6 }
 @media (max-width: 680px) { .sheet-grid { grid-template-columns: 1fr } .sheet { border-radius: 20px 20px 0 0 } }
 
-/* the worked example: one morning, three panels */
-.strip3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px }
-.strip3-card { display: grid; gap: 6px; align-content: start }
-.strip3-card b { font-size: 18px }
-.strip3-card p { font-size: 15.5px; line-height: 1.55 }
-.strip3-time { background: var(--lime); border-radius: 999px; padding: 2px 10px; justify-self: start }
-.strip3-facts { margin-top: 16px }
-.land-shot-note { max-width: 46rem; margin-bottom: 14px }
-@media (max-width: 880px) { .strip3 { grid-template-columns: 1fr } }

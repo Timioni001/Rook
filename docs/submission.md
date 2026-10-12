@@ -115,7 +115,7 @@ fix was the honesty, not the retries:
   answer.
 
 Four tests guard it, one of which sweeps **every span of a full run and fails if a single one
-exports nothing**. 225 tests, all passing. The failure mode was invisible once; it cannot be again.
+exports nothing**. 265 tests, all passing. The failure mode was invisible once; it cannot be again.
 
 **What we would use next.** Two detections worth configuring in the dashboard rather than in code:
 a regex detection on our synthetic key prefix as a leak tripwire, which should never match, and a
@@ -138,7 +138,7 @@ incident that did not close.
 
 - [ ] Mark incident `4c1da347` **Resolved** on the neatlogs board.
 - [ ] Paste the trace URLs into the pending table at the end of `evidence/neatlogs-traces.md`.
-- [ ] Redeploy Pages so the live site reads 225 tests:
+- [ ] Redeploy Pages so the live site reads 265 tests:
       `ROOK_API_ORIGIN=https://rook-qswm.onrender.com ./scripts/deploy-pages.sh`
 - [ ] Make the repository public, if it is not already.
 - [ ] Upload `docs/video/rook-demo.mp4`, or link it if the form wants a URL.

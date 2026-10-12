@@ -42,7 +42,7 @@ The fix was not the one recommended. The retries were already there — the engi
 state before it retries anything. What was missing was honesty: a failure the engine *survived*
 closed its span green, so a step that quietly died and a step that worked looked identical from the
 outside. A handled failure now marks its own span, no span can export an empty output, and one test
-sweeps every span of a full run and fails if a single one comes back empty. 225 tests, all passing.
+sweeps every span of a full run and fails if a single one comes back empty. 265 tests, all passing.
 
 cfo.ai modelled the business from inputs each labelled measured, benchmark or assumption, and found
 the fragile one for us: the moment customer acquisition is paid in cash rather than founder time,

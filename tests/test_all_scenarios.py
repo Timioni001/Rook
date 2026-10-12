@@ -109,3 +109,17 @@ def test_the_new_refusals_name_the_rule_that_stopped_them():
     _, sb, _, washout = run_to_a_stop("fixtures_washout")
     assert washout["actions"] == []                              # nowhere to move anything to
     assert len([r for r in washout["refusals"] if r["kind"] == "declined"]) == 3
+
+
+@pytest.mark.parametrize("scenario", sorted(SCENARIOS))
+def test_the_picker_says_what_actually_happens(scenario):
+    """The demo groups scenarios under 'goes to plan', 'recovers' and 'stops'. A label that promises
+    a clean close on a run that escalates is the kind of slop a judge notices, so check it."""
+    from rook.sandbox import SCENARIO_CARD
+    title, kind = SCENARIO_CARD[scenario]
+    st, sb, iid, rep = run_to_a_stop(scenario)
+    faults = any(SCENARIOS[scenario][1].values())
+    assert (rep["status"] == "escalated") == (kind == "stops"), f"{scenario}: {kind} but {rep['status']}"
+    if kind == "recovers":
+        assert faults, f"{scenario} says it recovers from something, but nothing is injected"
+    assert 0 < len(title) <= 44 and not title.endswith(".")

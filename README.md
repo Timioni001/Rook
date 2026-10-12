@@ -9,7 +9,7 @@ not finish stays open, named, with the reason.
 
 **[rook-keywarden.pages.dev](https://rook-keywarden.pages.dev)** — the front page, with the
 waitlist. **[Open the demo →](https://rook-keywarden.pages.dev/app/)** — no sign-up, straight into a
-real incident. Six playbooks across four industries · 40 scenarios · 225 tests
+real incident. Six playbooks across four industries · 40 scenarios · 265 tests
 
 <img src="docs/images/dashboard-top.png" alt="The Rook dashboard: pick an industry, then the kind of problem, or describe your own organisation" width="880">
 
@@ -157,7 +157,7 @@ cd web && npm ci && npm run dev          # front page http://localhost:3000, dem
 docker build -t rook . && docker run --rm -p 8000:8000 rook
 
 # 4. Tests
-python -m pytest -q                      # 225 tests
+python -m pytest -q                      # 265 tests
 ```
 
 <details>

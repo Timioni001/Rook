@@ -67,6 +67,10 @@ const INDUSTRIES: { key: string; label: string; blurb: string; playbooks: string
   { key: 'sport', label: 'Sport & clubs', blurb: 'Fixtures, venues and officials, and the teams waiting to be told.',
     playbooks: ['fixtures'] },
 ]
+// Scenarios are grouped by what the run actually does, which a test checks against the engine.
+const KIND_ORDER: [string, string][] = [
+  ['smooth', 'Goes to plan'], ['recovers', 'Something fails, Rook recovers'], ['stops', 'Rook stops and hands over'],
+]
 const industryOf = (pb: string) => INDUSTRIES.find((i) => i.playbooks.includes(pb))?.key || 'health'
 
 const PLAYBOOK_NAME: Record<string, string> = {
@@ -187,7 +191,9 @@ export default function Page() {
   const pickPlaybook = (k: string) => {
     setPlaybook(k)
     setSetup({})                       // the knobs belong to the problem type that is showing
-    const first = scenarios.find((s) => s.playbook === k)
+    // Start each problem type on the run where nothing goes wrong: the failures read better once
+    // you have seen what normal looks like.
+    const first = scenarios.find((s) => s.playbook === k && s.kind === 'smooth') || scenarios.find((s) => s.playbook === k)
     if (first) setScenario(first.name)
   }
   const [setup, setSetup] = useState<Record<string, any>>({})
@@ -221,6 +227,16 @@ export default function Page() {
 
   // On identity switch keep the open incident; if the new identity can't see it, loadIncident clears it.
   useEffect(() => { setD(null); loadList() }, [loadList])
+
+  // A link from the site can open the demo on a particular run: /app/?scenario=fixtures_clean
+  useEffect(() => {
+    if (!scenarios.length) return
+    const want = new URLSearchParams(window.location.search).get('scenario')
+    const sc = scenarios.find((x) => x.name === want)
+    if (!sc) return
+    setPlaybook(sc.playbook); setIndustry(industryOf(sc.playbook)); setScenario(sc.name); setSetup({})
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [scenarios])
 
   // Somebody typing out their own clinic should not lose it to a reload or a stray refresh.
   useEffect(() => {
@@ -376,10 +392,17 @@ export default function Page() {
                   </button>
                 ))}
               </div>
-              <label htmlFor="scenario" className="mono small">Sandbox scenario</label>
+              <label htmlFor="scenario" className="mono small">How it plays out</label>
               <div className="row">
                 <select id="scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>
-                  {scenarios.filter((s) => s.playbook === playbook).map((s) => <option key={s.name} value={s.name}>{s.name.replace(/_/g, ' ')}</option>)}
+                  {KIND_ORDER.map(([kind, label]) => {
+                    const here = scenarios.filter((s) => s.playbook === playbook && s.kind === kind)
+                    return here.length ? (
+                      <optgroup key={kind} label={label}>
+                        {here.map((s) => <option key={s.name} value={s.name}>{s.title || s.name.replace(/_/g, ' ')}</option>)}
+                      </optgroup>
+                    ) : null
+                  })}
                 </select>
                 <button className="btn-dark" disabled={busy || !isAnalyst} onClick={create}>{PLAYBOOK_COPY[playbook]?.button}</button>
               </div>
@@ -394,18 +417,9 @@ export default function Page() {
             </div>
           </div>
           <aside className="hero-side">
-            <div className="card explain">
-              <p>Rook connects to the software a company already runs. Staff report a problem, Rook works out what
-                is really going on across every system it touches, proposes a fix, waits for a person to approve
-                anything that reaches someone outside the building, then checks the result and shows the proof.</p>
-              <p>It does not replace your appointment book or your accounting software. It does the chasing and
-                coordinating between them that otherwise lands on a member of staff.</p>
-            </div>
             <HeroArt />
           </aside>
         </header>
-
-        <HowItWorks />
 
         <Guide R={R} d={d} me={me} busy={busy} who={who} approver={approverName(setup)}
           onRun={() => act(() => api(who.token, `/incidents/${id}/run`, {}), 'Run started.')}
@@ -437,7 +451,7 @@ export default function Page() {
                   <button className={`chip ${i.id === id ? 'sel' : ''}`} aria-pressed={i.id === id}
                     onClick={() => { setNotice(null); setId(i.id) }}>
                     <span className="mono small">{time(i.created_at)}</span>
-                    <b>{i.playbook} · {i.scenario.replace(/_/g, ' ')}</b>
+                    <b>{PLAYBOOK_NAME[i.playbook] || i.playbook} · {scenarios.find((s) => s.name === i.scenario)?.title || i.scenario.replace(/_/g, ' ')}</b>
                     <Pill tone={st.tone}>{st.label}</Pill>
                   </button>
                 </li>
@@ -741,10 +755,12 @@ function YourSituation({ playbook, setup, onChange, reported, onReported }: {
         onChange={(e) => set(f.key, e.target.value)} />
     </label>
   )
+  // Closed by default: the scenario is the quick way in. Open if the visitor already typed something.
+  const [startOpen] = useState(n > 0)
   return (
-    <details className="own" open>
+    <details className="own" open={startOpen}>
       <summary>
-        <b>Tell Rook about your own organisation</b>
+        <b>Or describe your own organisation</b> <span className="small muted">optional</span>
         {n > 0 && <span className="own-count mono">{n} filled in</span>}
         <span className="howto-chev" aria-hidden="true">+</span>
       </summary>
@@ -848,13 +864,13 @@ function PlanFlow({ actions }: { actions: any[] }) {
 
 function HowToUse() {
   const steps = [
-    ['Pick a problem and press the button', 'Each one is a real situation. Start with “A doctor calls in sick”, scenario “cover clean”.'],
-    ['Or put your own organisation in', 'Open “Tell Rook about your own organisation” and type your clinic or company name, who is off, who can cover and what you are reporting. Everything that comes back is written about you.'],
+    ['Pick a problem and press the button', 'Each one is a real situation. Start with Healthcare, “Doctor off sick”, and “Everyone moved and told”.'],
+    ['Or put your own organisation in', 'Open “Or describe your own organisation” and type your clinic or company name, who is off, who can cover and what you are reporting. Everything that comes back is written about you.'],
     ['Read what Rook found', 'It has looked across every connected system and changed nothing yet. The Findings say who is affected and why.'],
     ['Press Run plan', 'Watch the Plan and the Timeline. Each step is checked against the system itself before the next one starts.'],
     ['Approve when it stops', 'Rook will not message a patient without a person saying yes. Switch the menu at the top right to the manager and approve.'],
     ['Check the proof, not the promise', 'Verification lists what was confirmed against the live systems. Closed means every one of them passed.'],
-    ['See what it refused to do', 'Open “Limits”. Try scenario “cover unreachable” to watch Rook deliberately leave one appointment alone, and say why.'],
+    ['See what it refused to do', 'Open “Limits”. Try “One patient cannot be reached” to watch Rook deliberately leave one appointment alone, and say why.'],
     ['Take the evidence away', 'Download the evidence pack at the bottom: every action, approval, check and a tamper-evident audit trail.'],
   ]
   return (
@@ -878,21 +894,6 @@ function HowToUse() {
   )
 }
 
-function HowItWorks() {
-  const steps = [
-    ['A problem comes in', 'A doctor calls in sick, an order is late, someone leaves. Staff raise it, or a connected system does.'],
-    ['Rook investigates', 'It reads every system the problem touches and works out who and what is actually affected. Nothing is changed yet.'],
-    ['Staff approve', 'Rook proposes the fix as ordered steps. Anything that reaches a person outside the building waits for someone to say yes.'],
-    ['Rook proves it', 'It checks the result against the systems themselves. Whatever it could not finish stays open, named, and with the reason.'],
-  ]
-  return (
-    <ol className="how" aria-label="How Rook works">
-      {steps.map(([t, x], i) => (
-        <li key={t}><span className="mono small">{String(i + 1).padStart(2, '0')}</span><b>{t}</b><span className="small">{x}</span></li>
-      ))}
-    </ol>
-  )
-}
 
 /** Plain-language "what now?" for whoever is looking at the screen. */
 function Guide({ R, d, me, busy, who, approver, onRun, onApprover, onTry }: any) {

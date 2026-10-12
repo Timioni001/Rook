@@ -20,7 +20,7 @@ from . import obs
 from .domain import Principal
 from .engine import Engine, RunInProgress, evidence_pack
 from .playbooks import PLAYBOOKS
-from .sandbox import SCENARIOS, Sandbox, playbook_of
+from .sandbox import SCENARIO_CARD, SCENARIOS, Sandbox, playbook_of
 from .store import Store
 
 MAX_BODY = 8 * 1024
@@ -267,7 +267,8 @@ def create_app(db_path=None, tokens=None, step_delay=None, background=True, rate
 
     @app.get("/api/scenarios")
     def scenarios(p: Principal = Depends(limited)):
-        return [{"name": k, "description": v[0], "playbook": playbook_of(k)} for k, v in SCENARIOS.items()]
+        return [{"name": k, "title": SCENARIO_CARD[k][0], "kind": SCENARIO_CARD[k][1], "description": v[0],
+                 "playbook": playbook_of(k)} for k, v in SCENARIOS.items()]
 
     @app.get("/api/playbooks")
     def playbooks(p: Principal = Depends(limited)):
