@@ -31,11 +31,13 @@ Each id matches an `Entire-Checkpoint:` trailer in `git log`.
 
 | Checkpoint | Commit | What the session did |
 |---|---|---|
-| `01M4JJDPPS6G0H9544VZHFBCK3` | `0a24e08` | Turned Entire on and documented it |
-| `01M4K7NDN001T1HH28YF5J9VE8` | `c8be14d` | Committed checkpoints into the repo so they merge into main |
-| `01M4K7R9BB2PMACK1VK2KK857T` | `f8ed2a0` | Exported the second checkpoint, added extra redaction |
-| `01M4KHB6C93GCV4RPS7YFQ6351` | `66ba4a6` | Fixed the WSL setup, replaced AWS with Cloudflare Tunnel |
-| `01M4KHPDHXNSAXNEF8HDC7WT8K` | `908dcc6` | Gave the project its own Python 3.13 via uv for neatlogs |
-| `01M4KK5YMF2PV0548CAX4KPDYT` | `7c94aa1` | Guided dashboard, one-command public link, cfo.ai inputs |
-| `01M4KK752JA1SB7VVM3CYA4YZ3` | `893d52e` | Exported checkpoints with a stricter email redaction |
-| `01M4KMAH7MFTFAEYJ673B42XYQ` | `2db6886` | No-terminal deploy (Render + Cloudflare Pages), handoff notes |
+| `01M4JJDPPS6G0H9544VZHFBCK3` | `caba430` | Record Entire as the build's session tracker and document how to inspect checkpoints |
+| `01M4K7NDN001T1HH28YF5J9VE8` | `25f803b` | Commit Entire checkpoints into the repo so they merge into main with the code |
+| `01M4K7R9BB2PMACK1VK2KK857T` | `b6a4211` | Export the latest Entire checkpoint and allow extra redaction words |
+| `01M4KHB6C93GCV4RPS7YFQ6351` | `e4763b1` | Fix the WSL setup on machines with NodeSource Node and replace AWS with Cloudflare Tunnel |
+| `01M4KHBWY3GQ4BH0ZMYZJQYFNW` | `79499ad` | Export the latest Entire checkpoints |
+| `01M4KHP984Z0RBZEYECJAV4Z8B` | `d5603f5` | Give the project its own Python 3.13 via uv, since neatlogs does not support 3.14 |
+| `01M4KK5YMF2PV0548CAX4KPDYT` | `efc51c2` | Guide new users through the dashboard and make the public link one command |
+| `01M4KK752JA1SB7VVM3CYA4YZ3` | `d08898d` | Export the latest Entire checkpoints |
+| `01M4KMAH7MFTFAEYJ673B42XYQ` | `8332568` | Go live from the browser: Render runs the agent, Cloudflare Pages serves the dashboard |
+| `01M4KMB70M4NBTETESDCAE715X` | `47c62a9` | Export the latest Entire checkpoints |
