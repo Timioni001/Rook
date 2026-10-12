@@ -1,19 +1,25 @@
-// Record the demo as a video, the same way every time.
+// Record the submission video, the same way every time.
 //
-//   ROOK_DEMO_URL=http://localhost:8000 node scripts/record-demo.js            # the short one
-//   ROOK_DEMO_URL=https://rook-keywarden.pages.dev node scripts/record-demo.js --technical
+//   ROOK_DEMO_URL=https://rook-keywarden.pages.dev node scripts/record-demo.js
+//   ROOK_DEMO_PACE=1.3 node scripts/record-demo.js        # slower, if you are talking over it
+//
+// One video, in the order neatHack asked for it: the problem, the agent solving it on the live
+// site, then the incident neatlogs raised against our own traces and how it was fixed, then cfo.ai
+// and Entire. The first two parts are the real deployed product driven in a real browser; the last
+// two are cards in scripts/video/story.html, which uses the product's own type and colours so the
+// cut does not jolt.
 //
 // Why a script and not a hand-recorded screen capture: a demo you can re-run is a demo you can fix.
-// Change a word, run it again, get the same clip with the same pacing. It drives the real site in
-// a real browser, draws a cursor (Playwright's video does not capture the system one) and burns in
-// a caption per beat, so the clip is followable with the sound off before any voice-over exists.
+// Change a word, run it again, get the same clip with the same pacing. It draws a cursor
+// (Playwright's video does not capture the system one) and burns in a caption per beat, so the clip
+// is followable with the sound off before any voice-over exists.
 //
-// Output: docs/video/<name>.webm, at 1280x720.
+// Output: docs/video/rook-demo.webm, at 1600x900.
 const fs = require('fs')
 const path = require('path')
 
 const URL = (process.env.ROOK_DEMO_URL || 'http://localhost:8000').replace(/\/+$/, '')
-const TECHNICAL = process.argv.includes('--technical')
+const STORY = 'file://' + path.join(__dirname, 'video', 'story.html')
 const OUT = path.join(__dirname, '..', 'docs', 'video')
 const PACE = Number(process.env.ROOK_DEMO_PACE || 1)      // 1.5 slows everything down by half
 
@@ -28,9 +34,9 @@ const CHROME = `
     border-radius: 50%; border: 3px solid #c8f24c; opacity: 0; pointer-events: none }
   #rk-ring.go { animation: rk-pop .5s ease-out }
   @keyframes rk-pop { from { opacity: 1; transform: scale(.3) } to { opacity: 0; transform: scale(1.3) } }
-  #rk-cap { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483645; padding: 18px 34px 22px;
+  #rk-cap { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483645; padding: 22px 44px 26px;
     background: linear-gradient(transparent, rgba(16,16,16,.92) 38%); color: #fbfaf7;
-    font-family: "Space Grotesk", system-ui, sans-serif; font-size: 25px; line-height: 1.3;
+    font-family: "Space Grotesk", system-ui, sans-serif; font-size: 29px; line-height: 1.3;
     opacity: 0; transition: opacity .3s; text-align: center; pointer-events: none }
   #rk-cap.on { opacity: 1 }
   #rk-cap b { color: #c8f24c }
@@ -92,6 +98,15 @@ async function tap(page, locator) {
   await wait(500)
 }
 
+/** Show one card from story.html and hold it. The page animates nothing on its own. */
+async function slide(page, n, caption, hold = 4200) {
+  await page.evaluate((i) => window.go(i), n)
+  await wait(500)
+  if (caption) await say(page, caption, hold)
+  else await wait(hold)
+  await clear(page)
+}
+
 /** Scroll in steps rather than jumping, so the eye can follow it. */
 async function glide(page, locator, steps = 3) {
   for (let i = 0; i < steps; i++) {
@@ -107,8 +122,8 @@ async function glide(page, locator, steps = 3) {
   fs.mkdirSync(OUT, { recursive: true })
   const browser = await chromium.launch()
   const ctx = await browser.newContext({
-    viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1,
-    recordVideo: { dir: OUT, size: { width: 1280, height: 720 } },
+    viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1,
+    recordVideo: { dir: OUT, size: { width: 1600, height: 900 } },
   })
   const page = await ctx.newPage()
 
@@ -116,11 +131,12 @@ async function glide(page, locator, steps = 3) {
   await page.goto(URL + '/', { waitUntil: 'networkidle' })
   await chrome(page)
   await wait(900)
-  await say(page, 'A clinic. A doctor calls in sick at eight in the morning.', 3000)
-  await say(page, '<b>Twelve patients</b> are booked in with her today. None of them know.', 3200)
+  await say(page, 'Every organisation runs on work that falls <b>between</b> its systems.', 3200)
+  await say(page, 'A doctor calls in sick at eight. Twelve patients are booked in. None of them know.', 3600)
+  await say(page, 'A person loses the morning to the phone, and nobody can prove what was done.', 3400)
   await clear(page)
   await glide(page, page.locator('.strip3').first(), 3)
-  await say(page, 'Normally someone loses the morning to the phone. This is what Rook does instead.', 3400)
+  await say(page, 'Rook does that work, and <b>proves</b> it. Same engine for a clinic, an outage or a leaked key.', 3800)
   await clear(page)
 
   // ---------------------------------------------------------------- into the demo
@@ -198,13 +214,29 @@ async function glide(page, locator, steps = 3) {
     await say(page, 'And what it refused to do, with the reason, handed to a person by name.', 3600)
     await clear(page)
   }
-  await say(page, 'Nothing is called done unless it was checked. <b>rook-keywarden.pages.dev</b>', 3800)
+
+  // ---------------------------------------------------------------- neatlogs, cfo.ai, Entire
+  await page.goto(STORY, { waitUntil: 'networkidle' })
+  await chrome(page)
+  await wait(700)
+  await slide(page, 1, 'That was Rook working. Now the part most demos leave out.', 3600)
+  await slide(page, 2, 'Neatlogs raised this against our own traces, before we noticed anything.', 4200)
+  await slide(page, 3, 'Four runs we had called fine. Tool spans arriving with <b>nothing in them</b>.', 4200)
+  await slide(page, 4, 'It named the two tools, and what to check on each.', 4000)
+  await slide(page, 5, 'One button from the incident to the coding agent, with the traces as the brief.', 4000)
+  await slide(page, 6, 'The retries were already there. The <b>honesty</b> was not: a survived failure closed green.', 4600)
+  await slide(page, 7, 'cfo.ai modelled the business, and found the assumption that breaks it.', 4200)
+  await slide(page, 8, 'Entire checkpointed every session, with the id in the commit itself.', 4000)
+  await slide(page, 9, 'Nothing is called done unless it was checked. <b>rook-keywarden.pages.dev</b>', 4600)
 
   await ctx.close()
   await browser.close()
-  const made = fs.readdirSync(OUT).filter((f) => f.endsWith('.webm')).sort()
-  const latest = made[made.length - 1]
-  const name = (TECHNICAL ? 'rook-technical' : 'rook-demo') + '.webm'
+  const name = 'rook-demo.webm'
+  // Playwright names the file by hash. Take the one just written, by mtime: sorting by name picks
+  // up a previous rook-demo.webm instead, and you encode yesterday's clip without noticing.
+  const latest = fs.readdirSync(OUT).filter((f) => f.endsWith('.webm') && f !== name)
+    .map((f) => [f, fs.statSync(path.join(OUT, f)).mtimeMs]).sort((a, b) => b[1] - a[1])[0][0]
+  fs.rmSync(path.join(OUT, name), { force: true })
   fs.renameSync(path.join(OUT, latest), path.join(OUT, name))
   const kb = Math.round(fs.statSync(path.join(OUT, name)).size / 1024)
   console.log(`wrote ${path.join(OUT, name)} (${kb} KB)`)

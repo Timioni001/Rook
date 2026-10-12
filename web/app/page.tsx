@@ -81,7 +81,7 @@ export default function Landing() {
             <div className="stat"><b>40</b><span className="small">scenarios, run end to end</span></div>
             <div className="stat"><b>16 / 24</b><span className="small">close with proof / stop and say why</span></div>
             <div className="stat"><b>6</b><span className="small">playbooks across 4 industries</span></div>
-            <div className="stat"><b>218</b><span className="small">tests, all passing</span></div>
+            <div className="stat"><b>225</b><span className="small">tests, all passing</span></div>
           </div>
         </section>
 

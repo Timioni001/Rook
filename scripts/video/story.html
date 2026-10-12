@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Rook — the parts the browser cannot show</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  /* Same tokens as the product, so the cut from the live site to these cards is not a jolt. */
+  :root {
+    --ink: #111; --paper: #fff; --canvas: #a9a9a9; --soft: #f1f1f1; --line: #e2e2e2;
+    --mute: #5c5c5c; --lime: #b9ff66; --bad: #b42318; --bad-bg: #fde6e3; --ok: #1d7a2e;
+    --sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --mono: "Space Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box }
+  html, body { height: 100% }
+  body { margin: 0; background: var(--canvas); color: var(--ink); font: 16px/1.5 var(--sans);
+         -webkit-font-smoothing: antialiased; overflow: hidden }
+
+  .slide { position: fixed; inset: 0; display: none; padding: 46px 64px 112px; background: var(--paper);
+           flex-direction: column; opacity: 0; transition: opacity .45s ease }
+  .slide.on { display: flex; opacity: 1 }
+  .slide.dark { background: var(--ink); color: var(--paper) }
+
+  .kicker { font-family: var(--mono); font-size: 14px; letter-spacing: .04em; text-transform: uppercase;
+            color: var(--mute); margin: 0 0 14px }
+  .dark .kicker { color: var(--lime) }
+  h1 { font-size: 62px; line-height: 1.05; letter-spacing: -.02em; margin: 0 0 18px; max-width: 20ch }
+  h2 { font-size: 38px; line-height: 1.12; letter-spacing: -.015em; margin: 0 0 10px; max-width: 26ch }
+  .lead { font-size: 21px; line-height: 1.45; color: #333; max-width: 60ch; margin: 0 }
+  .dark .lead { color: #d9d9d9 }
+  mark { background: var(--lime); color: var(--ink); padding: 0 8px; border-radius: 6px;
+         box-decoration-break: clone; -webkit-box-decoration-break: clone }
+
+  /* A screenshot, framed the way the product frames a card. */
+  .pic h2 { font-size: 34px; margin-bottom: 8px }
+  .pic .lead { font-size: 18.5px; max-width: 86ch }
+  .shot { flex: 1; min-height: 0; margin-top: 18px; display: flex; align-items: center; justify-content: center }
+  .shot img { max-width: 100%; max-height: 100%; border: 1.5px solid var(--ink); border-radius: 20px;
+              box-shadow: 0 5px 0 var(--ink); background: #fff }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 24px; flex: 1; min-height: 0 }
+  .card { border: 1.5px solid var(--ink); border-radius: 22px; box-shadow: 0 5px 0 var(--ink);
+          padding: 22px 26px; background: var(--paper) }
+  .card b { display: block; font-size: 19px; margin-bottom: 6px }
+  .card p { margin: 0; font-size: 16.5px; line-height: 1.5; color: #333 }
+  .card.lime { background: var(--lime); box-shadow: 0 5px 0 var(--ink) }
+
+  pre { font-family: var(--mono); font-size: 16.5px; line-height: 1.65; background: var(--ink); color: #eee;
+        border-radius: 20px; padding: 24px 28px; margin: 0; overflow: hidden }
+  pre .add { color: var(--lime) } pre .del { color: #ff8e80 } pre .dim { color: #8c8c8c }
+
+  .nums { display: flex; gap: 46px; margin-top: 26px; flex-wrap: wrap }
+  .num b { display: block; font-size: 46px; line-height: 1 }
+  .num span { font-size: 15px; color: var(--mute) }
+  .dark .num span { color: #bdbdbd }
+
+  ul.ticks { margin: 20px 0 0; padding: 0; list-style: none; font-size: 20px; line-height: 1.5 }
+  ul.ticks li { padding-left: 34px; position: relative; margin-bottom: 12px; max-width: 62ch }
+  ul.ticks li::before { content: "→"; position: absolute; left: 0; font-family: var(--mono); color: var(--mute) }
+  .dark ul.ticks li::before { color: var(--lime) }
+
+  .foot { position: fixed; left: 64px; bottom: 34px; font-family: var(--mono); font-size: 14px; color: var(--mute) }
+  .dark .foot { color: #9a9a9a }
+</style>
+</head>
+<body>
+
+<!-- 1 ------------------------------------------------------------------ divider -->
+<section class="slide dark" id="s1">
+  <p class="kicker">Part two</p>
+  <h1>Then the agent ran into a <mark>problem of its own.</mark></h1>
+  <p class="lead">Everything so far was Rook working. This is Rook failing, being caught at it, and
+    being fixed — which is the part most demos leave out.</p>
+</section>
+
+<!-- 2 ------------------------------------------------------------------ neatlogs raised it -->
+<section class="slide pic" id="s2">
+  <p class="kicker">Neatlogs · incident 4c1da347</p>
+  <h2>We did not find this. Neatlogs did.</h2>
+  <p class="lead">Six negative detections against a baseline of zero, raised off the exported traces
+    while we were busy building. Pattern: <b>silent degradation</b>.</p>
+  <div class="shot"><img src="shots/raised.png" alt="Neatlogs incident: investigate transient tool failures and address silent workflow degradation" /></div>
+</section>
+
+<!-- 3 ------------------------------------------------------------------ the sessions -->
+<section class="slide pic" id="s3">
+  <p class="kicker">Neatlogs · sessions</p>
+  <h2>Execution failed, four times, in runs we had called fine.</h2>
+  <p class="lead">Tool, retriever and chain spans arriving with nothing in them. A step that worked
+    and a step that quietly died looked identical from the outside.</p>
+  <div class="shot"><img src="shots/sessions.png" alt="Neatlogs sessions list with Execution Failed detections" /></div>
+</section>
+
+<!-- 4 ------------------------------------------------------------------ what it recommended -->
+<section class="slide pic" id="s4">
+  <p class="kicker">Neatlogs · recommended action</p>
+  <h2>It named the two tools and what to check.</h2>
+  <p class="lead"><code>app.update_dependent</code> and <code>cloud.rollback_service</code>: transient
+    and timeout errors that were never surfacing as workflow failures.</p>
+  <div class="shot"><img src="shots/recommended.png" alt="Neatlogs recommended action, steps and verification" /></div>
+</section>
+
+<!-- 5 ------------------------------------------------------------------ sent to claude code -->
+<section class="slide pic" id="s5">
+  <p class="kicker">One button</p>
+  <h2>Sent straight to the coding agent.</h2>
+  <p class="lead">From the incident page to a fix in the repository, with the traces as the brief.</p>
+  <div class="shot"><img src="shots/sent.png" alt="The neatlogs incident sent to Claude Code" /></div>
+</section>
+
+<!-- 6 ------------------------------------------------------------------ the fix -->
+<section class="slide" id="s6">
+  <p class="kicker">The fix</p>
+  <h2>A handled failure that leaves no trace is indistinguishable from no failure.</h2>
+  <p class="lead">The retries were already there. What was missing was the honesty: a failure the
+    engine survived closed its span green.</p>
+  <div class="cols">
+    <pre>  <span class="dim">rook/obs.py</span>
+<span class="add">+ def failed(self, kind, msg, retrying):</span>
+<span class="add">+     set_status(ERROR, kind)</span>
+<span class="add">+     rook.error.kind   = kind</span>
+<span class="add">+     rook.retrying     = retrying</span>
+<span class="add">+     output.value      = msg</span>
+
+  <span class="dim">no span exports an empty</span>
+  <span class="dim">input or output any more</span></pre>
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div class="card"><b>Rollback and ticket paths</b>
+        <p>The two places that caught an exception and carried on now say so on the span.</p></div>
+      <div class="card lime"><b>225 tests</b>
+        <p>One sweeps every span of a full run and fails if a single one exports nothing. The
+          failure mode was invisible once. It will not be again.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 ------------------------------------------------------------------ cfo.ai -->
+<section class="slide" id="s7">
+  <p class="kicker">cfo.ai</p>
+  <h2>The business model, argued with properly.</h2>
+  <p class="lead">Every input is labelled measured, benchmark or assumption, so the plan can be
+    disagreed with line by line. cfo.ai did the modelling.</p>
+  <div class="nums">
+    <div class="num"><b>$0</b><span>model cost per incident — the planner is deterministic</span></div>
+    <div class="num"><b>52</b><span>spans per incident, measured, not guessed</span></div>
+    <div class="num"><b>$2,320</b><span>lowest cash balance, month 7, on $30,000</span></div>
+  </div>
+  <ul class="ticks">
+    <li>It found the fragile assumption for us: the moment acquisition is paid in cash rather than
+      founder time, year one needs about <b>$15,000 more capital</b>.</li>
+    <li>Plan: <b>cfo.ai/s/D9MnZeXwqy0WpZeV</b></li>
+  </ul>
+</section>
+
+<!-- 8 ------------------------------------------------------------------ entire -->
+<section class="slide" id="s8">
+  <p class="kicker">Entire</p>
+  <h2>And every session that built it is on the record.</h2>
+  <p class="lead">Entire checkpoints each agent session, and every commit made during one carries an
+    <code>Entire-Checkpoint:</code> trailer pointing back at it.</p>
+  <pre>$ git log --format='%h %s' --grep='Entire-Checkpoint'
+<span class="dim">7553caa</span>  A handled failure that leaves no trace…
+<span class="dim">c817b67</span>  Lead with the morning, not a screenshot
+<span class="dim">...</span>
+<span class="add">Entire-Checkpoint: 01M4KK5YMF2PV0548CAX4KPDYT</span></pre>
+  <ul class="ticks">
+    <li>The trailer lives in the commit, so the provenance travels with the repository.</li>
+  </ul>
+</section>
+
+<!-- 9 ------------------------------------------------------------------ close -->
+<section class="slide dark" id="s9">
+  <p class="kicker">Keywarden · neatHack 2026</p>
+  <h1>It only says done<br />when it has <mark>proof.</mark></h1>
+  <div class="nums">
+    <div class="num"><b>40</b><span>scenarios, run end to end</span></div>
+    <div class="num"><b>16 / 24</b><span>close with proof / stop and say why</span></div>
+    <div class="num"><b>225</b><span>tests, all passing</span></div>
+  </div>
+  <p class="lead" style="margin-top:28px">rook-keywarden.pages.dev · github.com/Timioni001/Rook</p>
+</section>
+
+<script>
+  // The recorder drives this: go(n) shows a slide, and nothing animates on its own, so every
+  // frame is a function of what was called. Same clip, every run.
+  window.go = (n) => {
+    for (const el of document.querySelectorAll('.slide')) el.classList.remove('on')
+    document.getElementById('s' + n).classList.add('on')
+  }
+  go(1)
+</script>
+</body>
+</html>
