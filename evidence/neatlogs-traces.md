@@ -10,6 +10,35 @@
 | Traces arriving in the neatlogs dashboard | **pending one run with the project key.** `./scripts/neatlogs-evidence.sh` does the whole thing in one command |
 | Before/after trace links | **pending.** The numbers below are measured and reproducible; only the dashboard URLs are missing |
 
+## The incident neatlogs found, and the fix
+
+Neatlogs triage `4c1da347-2e61-4655-9774-707e023a0583`, raised against the exported traces, not
+against the code. Two findings, and they are different kinds of problem:
+
+| What neatlogs saw | What it actually was |
+|---|---|
+| Spans of kind TOOL, RETRIEVER, CHAIN and WORKFLOW arriving with empty outputs | Real. We were setting our own `rook.*` and `neatlogs.*` attributes and never the flat `input.value` / `output.value` pair the session view reads, so a step that worked rendered as a step that produced nothing |
+| `Transient` and `Timeout` on `app.update_dependent` and `cloud.rollback_service`, with no error on the span | Half real. The failures are deliberate — the sandbox injects them, and the engine is built to survive them. But a failure the engine *handled* closed its span green, so the trace said nothing had gone wrong |
+
+The second one is the one worth having found. The engine already retried with backoff and re-read
+live state before retrying (`reconcile`), so the recommendation to "add a retry policy" was already
+satisfied — but you could not tell that from the traces, and neither could we. A handled failure
+that leaves no trace is indistinguishable from no failure.
+
+What changed:
+
+- `_Span.failed(kind, message, retrying=)` records a failure the caller is handling itself: ERROR
+  status, `rook.error.kind`, `rook.error.message`, `rook.retrying`, and an output that says which
+  of the two it was. Used on the rollback path (`cloud.rollback_service`) and on opening the
+  tracking ticket, the two places that caught an exception and carried on.
+- No span now exports an empty input or output. `_fill_io` gives any span that did not set them a
+  summary of its own attributes, so an unnoticed silent step cannot come back.
+- `execute` spans carry the call that went out (adapter, target, attempt, idempotency key) and the
+  result that came back; `reconcile` carries the question it asked the live system and the answer.
+
+Guarded by four tests in `tests/test_tracing.py`, one of which sweeps every span of a full run and
+fails if any of them exports nothing. The failure mode was invisible once; it will not be again.
+
 ## What is traced
 
 | Span | Kind | Useful attributes |
@@ -22,7 +51,8 @@
 | `reconcile`, `checkpoint.restore` | CHAIN | attempt, applied, checkpoint, in-flight count |
 | `verify`, `closure.evaluate`, `probe.dependent_health` | GUARDRAIL | pass/fail/inconclusive, checks passed / total, unhealthy dependents |
 
-Errors set span status `ERROR` plus `rook.error`. Secret values are replaced with fingerprints, and sensitive attribute keys are dropped.
+Errors set span status `ERROR` plus `rook.error`, including failures the engine handles itself
+rather than raising (see the triage above). Every span exports `input.value` and `output.value`. Secret values are replaced with fingerprints, and sensitive attribute keys are dropped.
 
 ## neatlogs features used
 

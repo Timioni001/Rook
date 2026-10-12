@@ -85,3 +85,51 @@ def test_export_mask_replaces_secret_values():
     span = {"attributes": {"x": "key sk_test_SYNTH_payments_v1", "n": [{"y": "sk_test_SYNTH_a"}]}}
     out = json.dumps(obs.mask_span(span))
     assert "sk_test_SYNTH" not in out and "fp:" in out
+
+
+def test_every_exported_span_says_what_went_in_and_what_came_back(spans):
+    """The failure this guards against: a span that exports no input and no output.
+
+    In the neatlogs session view such a span renders as a step that produced nothing, which is
+    exactly how a degraded tool call hid — the trace was there, the content was not.
+    """
+    run("signature")
+    thin = []
+    for s in spans.get_finished_spans():
+        a = s.attributes
+        got_in = a.get("input.value") or a.get("neatlogs.guardrail.input") or a.get("neatlogs.retriever.query")
+        got_out = a.get("output.value") or a.get("neatlogs.guardrail.output")
+        if not (got_in and str(got_in).strip()) or not (got_out and str(got_out).strip()):
+            thin.append(s.name)
+    assert thin == []
+
+
+def test_a_failure_the_engine_handles_still_marks_the_span(spans):
+    """A handled timeout used to close the span green: status ok, no error, empty output."""
+    with obs.span("execute.open_ticket", incident="inc-x") as sp:
+        sp.failed("ticket_timeout", "pm.open_ticket", retrying=False)
+    s = [x for x in spans.get_finished_spans() if x.name == "execute.open_ticket"][0]
+    assert not s.status.is_ok
+    assert s.attributes["rook.error.kind"] == "ticket_timeout"
+    assert s.attributes["rook.retrying"] is False
+    assert "pm.open_ticket" in s.attributes["output.value"]
+
+
+def test_a_transient_on_a_best_effort_write_is_visible_in_the_trace(spans):
+    """Opening the tracking ticket is best effort. Best effort is not the same as invisible."""
+    st = Store(":memory:")
+    sb = Sandbox(st, scenario="signature")
+    sb.s["failures"] = dict(sb.s["failures"], **{"pm.open_ticket": ["transient"]})
+    Engine(st, sb, sleep=lambda s: None).start()
+    s = [x for x in spans.get_finished_spans() if x.name == "execute.open_ticket"][0]
+    assert not s.status.is_ok and s.attributes["rook.error.kind"] == "ticket_transient"
+    assert "503" in s.attributes["output.value"]
+
+
+def test_a_tool_span_carries_the_call_and_its_result(spans):
+    run("signature")
+    tools = [s for s in spans.get_finished_spans() if s.name == "execute"]
+    first = tools[0]
+    assert "attempt 1" in first.attributes["input.value"]
+    assert "idempotency key" in first.attributes["input.value"]
+    assert first.attributes["output.value"].startswith("{")

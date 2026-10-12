@@ -204,11 +204,17 @@ class Engine:
             self.store.save_conditions(iid, conds)
             self.store.audit(iid, "closure_conditions_defined", {"conditions": [c.id for c in conds]})
 
-            try:
-                inc.ticket = self.sb.pm.open_ticket(inc.title, subject, f"{iid}:ticket")["ticket"]
-                self.store.audit(iid, "ticket_opened", {"ticket": inc.ticket})
-            except (Transient, Timeout, Permanent) as e:   # tracking is best effort, never blocks containment
-                self.store.audit(iid, "ticket_open_failed", {"error": type(e).__name__})
+            with span("execute.open_ticket", incident=iid) as sp:
+                sp.io(input=f"project tracker: open a ticket for {inc.title}")
+                try:
+                    inc.ticket = self.sb.pm.open_ticket(inc.title, subject, f"{iid}:ticket")["ticket"]
+                    self.store.audit(iid, "ticket_opened", {"ticket": inc.ticket})
+                    sp.set(ticket=inc.ticket)
+                except (Transient, Timeout, Permanent) as e:   # best effort, never blocks containment
+                    self.store.audit(iid, "ticket_open_failed", {"error": type(e).__name__})
+                    # best effort does not mean invisible: without this the span closed green and
+                    # the trace said nothing had gone wrong.
+                    sp.failed(f"ticket_{type(e).__name__.lower()}", e, retrying=False)
 
             with span("plan", incident=iid, playbook=pb.key) as sp:
                 planner = self._planner(pb)
@@ -381,8 +387,12 @@ class Engine:
         if a.status in (S.executing, S.unknown):
             # outcome uncertain: inspect real state BEFORE any new mutation
             with span("reconcile", incident=iid, action=a.id, action_type=a.type, attempt=a.retries) as sp:
+                sp.io(input=f"{a.type} {a.target} ended in {a.status.value} after attempt {a.retries}. "
+                            "Did it land on the live system?")
                 landed = applied(self.sb, a)
                 sp.set(applied=landed)
+                sp.io(output={True: "yes, the change is there", False: "no, the system is unchanged"}
+                      .get(landed, "could not be established"))
                 log("inspected live state for {action}: applied={applied}", action=a.id, applied=str(landed))
             if landed is True:
                 ok, ev = verify_action(self.sb, a)
@@ -434,8 +444,11 @@ class Engine:
                           adapter=a.params.get("service"), attempt=attempt) as sp:
                     sp.tool(f"{a.params.get('service')}.{a.type}", TOOL_DOCS.get(a.type, a.type),
                             {"target": a.target, "idempotency_key": a.idem_key, "attempt": attempt})
+                    sp.io(input=f"{a.params.get('service')}.{a.type}({a.target}) attempt {attempt}, "
+                                f"idempotency key {a.idem_key}")
                     a.result = self._exec(a)
                     sp.set(outcome="ok", replayed=bool(a.result.get("replayed")))
+                    sp.io(output=json.dumps(a.result))
                 self.store.tool_call(iid, a.id, attempt, "ok", a.result)
                 self.executions += 1
                 if self.crash_after is not None and self.executions >= self.crash_after:
@@ -541,6 +554,7 @@ class Engine:
                 self.store.tool_call(iid, a.id, a.retries + 1, "rollback_failed", {"error": str(e)})
                 self.store.audit(iid, "rollback_failed", {"action": a.id, "error": str(e)})
                 sp.guardrail(f"rollback {a.target}", False, str(e))
+                sp.failed(f"rollback_{type(e).__name__.lower()}", e, retrying=False)
                 return
             healthy = self.sb.health(a.target)
             sp.guardrail(f"rollback {a.target} restores service", healthy, json.dumps({"healthy": healthy}))

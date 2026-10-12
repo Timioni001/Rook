@@ -127,6 +127,8 @@ class _Span:
     """Handle yielded by span(); lets callers attach results discovered inside the span."""
     def __init__(self, otel):
         self.otel, self.attrs = otel, {}
+        self.sent = set()               # which of input.value / output.value were written
+        self.failure = None             # a failure the caller handled, recorded anyway
 
     def set(self, **attrs):
         self.attrs.update(attrs)
@@ -141,10 +143,14 @@ class _Span:
 
     # neatlogs custom attributes, so the dashboard renders each kind natively
     def guardrail(self, input, passed, output):
+        # the SDK resolves a guardrail span's input/output from these, so a generic input.value or
+        # output.value written afterwards would overwrite them: count them as already sent.
+        self.sent.update(("input.value", "output.value"))
         self._raw(**{"neatlogs.guardrail.input": input, "neatlogs.guardrail.passed": bool(passed),
                      "neatlogs.guardrail.output": output})
 
     def tool(self, name, description, parameters):
+        self.sent.add("input.value")
         self._raw(**{"neatlogs.tool.name": name, "neatlogs.tool.description": description,
                      "neatlogs.tool.parameters": json.dumps(parameters)})
 
@@ -157,11 +163,54 @@ class _Span:
         if output is not None:
             kw["output.value"] = output
         if kw:
+            self.sent.update(kw)
             self._raw(**kw)
 
+    def failed(self, kind, message, retrying=None):
+        """A failure the caller is handling itself.
+
+        Without this the span closes OK and exports an empty output, so a timeout on a tool looks
+        exactly like a tool that did nothing: the span is green, the trace has no error on it, and
+        the only trace of the failure is in our own audit log. Record it on the span too.
+        """
+        self.failure = (kind, message)
+        self.attrs.update(error=kind, error_message=str(message))
+        if retrying is not None:
+            self.attrs["retrying"] = bool(retrying)
+        if self.otel is None:
+            return
+        from opentelemetry.trace import Status, StatusCode
+        self._raw(**{"rook.error": kind, "rook.error.kind": kind, "rook.error.message": str(message)})
+        if retrying is not None:
+            self._raw(**{"rook.retrying": bool(retrying)})
+        self.otel.set_status(Status(StatusCode.ERROR, f"{kind}: {message}"))
+        self.io(output=f"{kind}: {message}"
+                       + ("" if retrying is None else
+                          " (will retry after re-reading live state)" if retrying else " (not retried)"))
+
     def retriever(self, query, documents):
+        self.sent.add("input.value")
         self._raw(**{"neatlogs.retriever.query": query, "neatlogs.retriever.top_k": len(documents),
                      **{f"neatlogs.retriever.documents.{i}": d for i, d in enumerate(documents)}})
+
+
+def _pairs(d):
+    return ", ".join(f"{k}={v}" for k, v in d.items() if v not in (None, "", [], {}))
+
+
+def _fill_io(h, name, attrs, err):
+    """No span leaves here with an empty input or output.
+
+    A span with neither reads, in the neatlogs session view, as a step that produced nothing, which
+    is how a degraded tool call hid in plain sight: the trace was there, the content was not.
+    """
+    if h.otel is None:
+        return
+    if "input.value" not in h.sent:
+        h.io(input=f"{name}({_pairs(attrs)})" if attrs else name)
+    if "output.value" not in h.sent:
+        done = {k: v for k, v in h.attrs.items() if k not in attrs}
+        h.io(output=(f"raised {err}" if err else _pairs(done) or f"{name}: nothing to report"))
 
 
 @contextlib.contextmanager
@@ -194,6 +243,7 @@ def span(name, session=None, user=None, user_meta=None, **attrs):
                 otel.set_status(Status(StatusCode.ERROR, err))
             raise
         finally:
+            _fill_io(h, name, attrs, err)
             rec = {"name": name, "ts": t0, "duration_ms": round((time.time() - t0) * 1000, 2),
                    "attrs": {**attrs, **h.attrs}, "error": err}
             line = redact(rec)
