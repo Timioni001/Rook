@@ -1,0 +1,101 @@
+{
+  "_": "One entry per beat. `caption` is burned into the picture and has to be readable in a second; `voice` is the spoken line and can breathe. The recorder holds each beat for as long as its voice line takes, so the two can never drift apart.",
+  "lines": {
+    "between": {
+      "caption": "Every organisation runs on work that falls <b>between</b> its systems.",
+      "voice": "Every organisation runs on work that falls between its systems."
+    },
+    "sick": {
+      "caption": "A doctor calls in sick at eight. Twelve patients are booked in. None of them know.",
+      "voice": "A doctor calls in sick at eight in the morning. Twelve patients are booked in with her today, and none of them know."
+    },
+    "phone": {
+      "caption": "A person loses the morning to the phone, and nobody can prove what was done.",
+      "voice": "Normally a person at the front desk loses the whole morning to the phone. And at the end of it, nobody can prove what was actually done."
+    },
+    "same-engine": {
+      "caption": "Rook does that work, and <b>proves</b> it. Same engine for a clinic, an outage or a leaked key.",
+      "voice": "This is Rook. It does that work, and it proves it. The same engine handles a clinic, a production outage, or an A P I key that outlived the person who made it."
+    },
+    "who": {
+      "caption": "First question: who are you? What you may do here depends on the answer.",
+      "voice": "First it asks who you are. That is not decoration. What you are allowed to do here depends on the answer."
+    },
+    "priya": {
+      "caption": "Priya is the manager. She can approve things that reach a patient.",
+      "voice": "Priya is the practice manager, so she can approve the steps that reach a patient."
+    },
+    "read": {
+      "caption": "Rook has read the appointment book, the records and the messaging system.",
+      "voice": "Rook has already read the appointment book, the patient records and the messaging system."
+    },
+    "nothing-yet": {
+      "caption": "It has changed <b>nothing</b> yet. It writes down what must be true first.",
+      "voice": "It has changed nothing yet. First it writes down what would have to be true on the live systems before any of this can be called done."
+    },
+    "findings": {
+      "caption": "Who is affected, who has room, and who it cannot reach.",
+      "voice": "Who is affected, which colleagues have room, and who it cannot reach."
+    },
+    "works": {
+      "caption": "Now it works the plan, one step at a time.",
+      "voice": "Now it works. Move the appointment, tell the patient, check it landed. Eleven times."
+    },
+    "approval": {
+      "caption": "It stops. Texting a patient reaches a real person, so it waits for Priya.",
+      "voice": "And it stops here. Texting a patient reaches a real person, so a human says yes first. That pause is deliberate."
+    },
+    "done": {
+      "caption": "Done. And this is the part that matters:",
+      "voice": "Done. And this is the part that matters."
+    },
+    "six-lines": {
+      "caption": "The whole run in six lines, in plain English.",
+      "voice": "The whole morning, in six lines of plain English."
+    },
+    "evidence": {
+      "caption": "Every check read back <b>from the systems themselves</b>, not from a tool saying \"ok\".",
+      "voice": "And every one of those lines was read back from the systems themselves. Not a tool reporting success. Actually checked."
+    },
+    "refused": {
+      "caption": "And what it refused to do, with the reason, handed to a person by name.",
+      "voice": "One patient had a dead phone number. Rook did not quietly move her. It left the appointment where it was, and handed reception her name, her time and the reason."
+    },
+    "s1": {
+      "caption": "That was Rook working. Now the part most demos leave out.",
+      "voice": "That was Rook working. Here is the part most demos leave out."
+    },
+    "s2": {
+      "caption": "Neatlogs raised this against our own traces, before we noticed anything.",
+      "voice": "We did not find this. Neatlogs did. Six negative detections against a baseline of zero, raised off our exported traces while we were busy building. The pattern it named was silent degradation."
+    },
+    "s3": {
+      "caption": "Four runs we had called fine. Tool spans arriving with <b>nothing in them</b>.",
+      "voice": "Four runs we had called fine. Tool, retriever and chain spans arriving with nothing in them, so a step that worked and a step that quietly died looked identical from the outside."
+    },
+    "s4": {
+      "caption": "It named the two tools, and what to check on each.",
+      "voice": "It named the two tools, update dependent and rollback service, and what to check on each one."
+    },
+    "s5": {
+      "caption": "One button from the incident to the coding agent, with the traces as the brief.",
+      "voice": "One button from the incident page to the coding agent, with the traces as the brief."
+    },
+    "s6": {
+      "caption": "The retries were already there. The <b>honesty</b> was not: a survived failure closed green.",
+      "voice": "The retries were already there. The honesty was not. A failure the engine survived closed its span green. Now a handled failure marks its own span, and no span can export an empty output. One test sweeps a whole run and fails if a single one does."
+    },
+    "s7": {
+      "caption": "cfo.ai modelled the business, and found the assumption that breaks it.",
+      "voice": "C F O dot A I modelled the business from inputs that are each labelled measured, benchmark or assumption. It found the fragile one. The moment acquisition is paid in cash rather than founder time, year one needs about fifteen thousand dollars more capital."
+    },
+    "s8": {
+      "caption": "Entire checkpointed every session, with the id in the commit itself.",
+      "voice": "Entire checkpointed every session that built this, and the checkpoint id sits in the commit itself, so the provenance travels with the repository."
+    },
+    "s9": {
+      "caption": "Nothing is called done unless it was checked. <b>rook-keywarden.pages.dev</b>",
+      "voice": "Nothing is called done unless it was checked. Rook, by Keywarden."
+    }
+  }
+}

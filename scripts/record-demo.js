@@ -24,6 +24,18 @@ const OUT = path.join(__dirname, '..', 'docs', 'video')
 const PACE = Number(process.env.ROOK_DEMO_PACE || 1)      // 1.5 slows everything down by half
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms * PACE))
+const round = (n) => Math.round(n * 100) / 100
+
+// The spoken lines, with how long each one takes. Made by scripts/make-voice.py; without it the
+// captions still play, at a reading speed.
+const VO = path.join(OUT, 'vo')
+const LINES = JSON.parse(fs.readFileSync(path.join(__dirname, 'video', 'narration.json'), 'utf8')).lines
+try {
+  const spoken = JSON.parse(fs.readFileSync(path.join(VO, 'lines.json'), 'utf8'))
+  for (const [k, v] of Object.entries(spoken)) Object.assign(LINES[k], v)
+} catch { console.log('no voice track yet: holding each caption for as long as it takes to read') }
+const cues = []
+let t0 = Date.now()
 
 /** A cursor the recording can see, and a caption anyone can read. */
 const CHROME = `
@@ -59,12 +71,24 @@ async function chrome(page) {
   })
 }
 
-async function say(page, html, hold = 2600) {
+/**
+ * One beat: show its caption, hold it for as long as the spoken line takes, log when it happened.
+ *
+ * The holds are not hand-tuned numbers. They come from the voice track, so a line that gets longer
+ * makes its own shot longer and picture and voice cannot drift apart. With no voice track, the
+ * fallback is a reading speed.
+ */
+async function say(page, id, fallback) {
+  const line = LINES[id]
+  if (!line) throw new Error(`no narration line "${id}"`)
+  const html = line.caption
+  const hold = line.hold || fallback || Math.max(2.4, html.replace(/<[^>]+>/g, '').length / 13)
+  cues.push({ id, at: round((Date.now() - t0) / 1000) })
   await page.evaluate((t) => {
     const cap = document.getElementById('rk-cap')
     if (cap) { cap.innerHTML = t; cap.classList.add('on') }
   }, html)
-  await wait(hold)
+  await wait(hold * 1000)
 }
 
 async function clear(page) {
@@ -99,11 +123,10 @@ async function tap(page, locator) {
 }
 
 /** Show one card from story.html and hold it. The page animates nothing on its own. */
-async function slide(page, n, caption, hold = 4200) {
+async function slide(page, n) {
   await page.evaluate((i) => window.go(i), n)
   await wait(500)
-  if (caption) await say(page, caption, hold)
-  else await wait(hold)
+  await say(page, 's' + n)
   await clear(page)
 }
 
@@ -126,17 +149,18 @@ async function glide(page, locator, steps = 3) {
     recordVideo: { dir: OUT, size: { width: 1600, height: 900 } },
   })
   const page = await ctx.newPage()
+  t0 = Date.now()          // the recording starts with the page; cue times are measured from here
 
   // ---------------------------------------------------------------- the front page
   await page.goto(URL + '/', { waitUntil: 'networkidle' })
   await chrome(page)
   await wait(900)
-  await say(page, 'Every organisation runs on work that falls <b>between</b> its systems.', 3200)
-  await say(page, 'A doctor calls in sick at eight. Twelve patients are booked in. None of them know.', 3600)
-  await say(page, 'A person loses the morning to the phone, and nobody can prove what was done.', 3400)
+  await say(page, 'between')
+  await say(page, 'sick')
+  await say(page, 'phone')
   await clear(page)
   await glide(page, page.locator('.strip3').first(), 3)
-  await say(page, 'Rook does that work, and <b>proves</b> it. Same engine for a clinic, an outage or a leaked key.', 3800)
+  await say(page, 'same-engine')
   await clear(page)
 
   // ---------------------------------------------------------------- into the demo
@@ -144,10 +168,10 @@ async function glide(page, locator, steps = 3) {
   await page.waitForSelector('.sheet', { timeout: 30000 })
   await chrome(page)
   await wait(700)
-  await say(page, 'First question: who are you? What you may do here depends on the answer.', 3400)
+  await say(page, 'who')
   await tap(page, page.locator('.who-card:has-text("Priya")'))
   await chrome(page)
-  await say(page, 'Priya is the manager. She can approve things that reach a patient.', 3000)
+  await say(page, 'priya')
   await clear(page)
 
   // ---------------------------------------------------------------- start it
@@ -155,18 +179,18 @@ async function glide(page, locator, steps = 3) {
   await page.waitForSelector('.overview h2', { timeout: 40000 })
   await chrome(page)
   await wait(800)
-  await say(page, 'Rook has read the appointment book, the records and the messaging system.', 3400)
-  await say(page, 'It has changed <b>nothing</b> yet. It writes down what must be true first.', 3400)
+  await say(page, 'read')
+  await say(page, 'nothing-yet')
   await clear(page)
   await glide(page, page.locator('.findings').first(), 2)
-  await say(page, 'Who is affected, who has room, and who it cannot reach.', 3200)
+  await say(page, 'findings')
   await clear(page)
 
   // ---------------------------------------------------------------- run it
   await page.locator('.overview button.btn-dark').scrollIntoViewIfNeeded()
   await tap(page, page.locator('.overview button.btn-dark'))
   await chrome(page)
-  await say(page, 'Now it works the plan, one step at a time.', 2600)
+  await say(page, 'works')
   await clear(page)
 
   let approvals = 0
@@ -176,7 +200,7 @@ async function glide(page, locator, steps = 3) {
     if (await btn.count()) {
       if (approvals === 0) {
         await chrome(page)
-        await say(page, 'It stops. Texting a patient reaches a real person, so it waits for Priya.', 3600)
+        await say(page, 'approval')
         await clear(page)
       }
       await tap(page, btn)
@@ -190,13 +214,13 @@ async function glide(page, locator, steps = 3) {
   // ---------------------------------------------------------------- the proof
   await chrome(page)
   await wait(800)
-  await say(page, 'Done. And this is the part that matters:', 2600)
+  await say(page, 'done')
   await clear(page)
   const story = page.locator('#story')
   if (await story.count()) {
     await story.scrollIntoViewIfNeeded()
     await wait(700)
-    await say(page, 'The whole run in six lines, in plain English.', 3200)
+    await say(page, 'six-lines')
     await clear(page)
     await glide(page, null, 2)
   }
@@ -204,14 +228,14 @@ async function glide(page, locator, steps = 3) {
   if (await verify.count()) {
     await verify.scrollIntoViewIfNeeded()
     await wait(700)
-    await say(page, 'Every check read back <b>from the systems themselves</b>, not from a tool saying "ok".', 3800)
+    await say(page, 'evidence')
     await clear(page)
   }
   const limits = page.locator('#refusals')
   if (await limits.count()) {
     await limits.scrollIntoViewIfNeeded()
     await wait(700)
-    await say(page, 'And what it refused to do, with the reason, handed to a person by name.', 3600)
+    await say(page, 'refused')
     await clear(page)
   }
 
@@ -219,15 +243,15 @@ async function glide(page, locator, steps = 3) {
   await page.goto(STORY, { waitUntil: 'networkidle' })
   await chrome(page)
   await wait(700)
-  await slide(page, 1, 'That was Rook working. Now the part most demos leave out.', 3600)
-  await slide(page, 2, 'Neatlogs raised this against our own traces, before we noticed anything.', 4200)
-  await slide(page, 3, 'Four runs we had called fine. Tool spans arriving with <b>nothing in them</b>.', 4200)
-  await slide(page, 4, 'It named the two tools, and what to check on each.', 4000)
-  await slide(page, 5, 'One button from the incident to the coding agent, with the traces as the brief.', 4000)
-  await slide(page, 6, 'The retries were already there. The <b>honesty</b> was not: a survived failure closed green.', 4600)
-  await slide(page, 7, 'cfo.ai modelled the business, and found the assumption that breaks it.', 4200)
-  await slide(page, 8, 'Entire checkpointed every session, with the id in the commit itself.', 4000)
-  await slide(page, 9, 'Nothing is called done unless it was checked. <b>rook-keywarden.pages.dev</b>', 4600)
+  await slide(page, 1)
+  await slide(page, 2)
+  await slide(page, 3)
+  await slide(page, 4)
+  await slide(page, 5)
+  await slide(page, 6)
+  await slide(page, 7)
+  await slide(page, 8)
+  await slide(page, 9)
 
   await ctx.close()
   await browser.close()
@@ -238,6 +262,8 @@ async function glide(page, locator, steps = 3) {
     .map((f) => [f, fs.statSync(path.join(OUT, f)).mtimeMs]).sort((a, b) => b[1] - a[1])[0][0]
   fs.rmSync(path.join(OUT, name), { force: true })
   fs.renameSync(path.join(OUT, latest), path.join(OUT, name))
+  fs.mkdirSync(VO, { recursive: true })
+  fs.writeFileSync(path.join(VO, 'cues.json'), JSON.stringify(cues, null, 2) + '\n')
   const kb = Math.round(fs.statSync(path.join(OUT, name)).size / 1024)
   console.log(`wrote ${path.join(OUT, name)} (${kb} KB)`)
 })()

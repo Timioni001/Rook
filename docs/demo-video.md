@@ -1,6 +1,6 @@
 # The submission video
 
-One video, 2:37, in the order neatHack asked for it:
+One video, 4:05, with a voice-over, in the order neatHack asked for it:
 
 1. **the problem the agent solves** — the front page, with the waitlist and the demo on it
 2. **the agent solving it** — a real run on the deployed site, start to verified closure
@@ -20,13 +20,20 @@ No re-recording by hand, no stray notifications in frame, no mouse wobble.
 # the screenshots the neatlogs cards use (not in git: they are a browser window, not product UI)
 scripts/video/shots/{raised,sessions,recommended,sent,overview}.png
 
+python scripts/make-voice.py speak      # one wav per line, and how long each one takes
 PLAYWRIGHT_MODULE=/opt/node-tools/node_modules/playwright \
 ROOK_DEMO_URL=https://rook-keywarden.pages.dev node scripts/record-demo.js
-ROOK_DEMO_PACE=1.3 node scripts/record-demo.js        # slower, if you are talking over it
-
-ffmpeg -i docs/video/rook-demo.webm -c:v libx264 -preset slow -crf 22 \
-  -pix_fmt yuv420p -movflags +faststart docs/video/rook-demo.mp4
+python scripts/make-voice.py mix        # lay the voice under it, at the times it was said
 ```
+
+**Picture and voice cannot drift.** The words live in `scripts/video/narration.json`, each beat with
+a short `caption` for the screen and a fuller `voice` line to speak. `make-voice.py speak` measures
+every line, the recorder holds each shot for exactly that long and writes down when it happened,
+and `mix` places each line at its own cue. Rewrite a line and its shot gets longer by itself. There
+is no edit pass to redo.
+
+The voice is piper, an on-device neural model, so nothing is sent to a service and it re-runs
+offline. `ROOK_DEMO_PACE=1.3` slows the whole thing down if you want more air.
 
 Output lands in `docs/video/`, which is gitignored: video does not belong in the repository.
 1600x900, about 6 MB as mp4.
@@ -67,10 +74,12 @@ If you need a 60-second cut: the problem (0:00–0:22), the approval pause (1:18
 
 ## Editing and voice
 
-- The clip has no audio. Record the voice-over separately and lay it under — reading from the table
-  above beats talking over a live run, and you can retake one line instead of all of them.
-- If a line runs long, raise `ROOK_DEMO_PACE` and re-record rather than speeding up your speech.
-- Keep the captions in for the silent-autoplay case (X, LinkedIn).
+- To record it in your own voice instead, read the `voice` lines out of `narration.json`, replace
+  the wavs in `docs/video/vo/` keeping the names, and run `make-voice.py mix`. Everything else,
+  including the pacing, stays as it is.
+- The captions stay burned in for the silent-autoplay case on X and LinkedIn.
+- The mix is normalised to -16 LUFS, which is the level speech wants on a phone. Listen to it
+  anyway before posting: levels can be measured, delivery cannot.
 - For a terminal shot (`pytest -q`), record it rather than filming it: **asciinema** replays a
   session as text at any size, and **VHS** (charmbracelet/vhs) writes the recording from a script,
   so the typing is as repeatable as the browser part.
